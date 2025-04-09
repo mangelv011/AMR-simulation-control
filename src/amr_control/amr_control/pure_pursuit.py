@@ -17,6 +17,9 @@ class PurePursuit:
         self._lookahead_distance: float = lookahead_distance
         self._path: list[tuple[float, float]] = []
 
+
+        self._aligned = False
+
     def compute_commands(self, x: float, y: float, theta: float) -> tuple[float, float]:
         """Pure pursuit controller implementation.
 
@@ -34,7 +37,7 @@ class PurePursuit:
         # Initialize velocities to zero to maintain ROS node message flow
         v = 0.0
         w = 0.0
-        print("Using pure pursuit", flush=True)
+      
 
         # Check if we have a path to follow
         if not self._path:
@@ -51,13 +54,17 @@ class PurePursuit:
         dx = target_point[0] - x
         dy = target_point[1] - y
         
-        # Convert target point to robot's local frame
-        target_x_local = dx * np.cos(theta) + dy * np.sin(theta)
-        target_y_local = -dx * np.sin(theta) + dy * np.cos(theta)
         
         # Calculate angle alpha (angle between robot's heading and target)
         alpha = np.arctan2(dy, dx) - theta
-        
+        angle_threshold = 0.2  # radians (about 45 degrees)
+        # Make the robot rotate in place when the angle error is large
+        if abs(alpha) < angle_threshold: 
+            self._aligned = True
+        if not self._aligned:
+            v = 0.0  # Stop forward movement
+            w = 1.0 * np.sign(alpha)  # Rotate in the direction of the error
+            return v, w
     
         # Pure pursuit formula: w = (2*v*sin(alpha))/(L)
         # Where L is the lookahead distance

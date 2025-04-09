@@ -6,8 +6,9 @@ import math
 
 def generate_launch_description():
     world = "project"
-    start = (-1.0, -1.0, math.radians(90))
+    start = (-1.0, -1.0, -math.radians(90))
     goal = (-0.6, 1.0)
+    
 
     particle_filter_node = LifecycleNode(
         package="amr_localization",
@@ -15,7 +16,7 @@ def generate_launch_description():
         name="particle_filter",
         namespace="",
         output="screen",
-        arguments=["--ros-args", "--log-level", "INFO"],
+        arguments=["--ros-args", "--log-level", "WARN"],
         parameters=[
             {
                 "enable_plot": True,
@@ -35,11 +36,11 @@ def generate_launch_description():
         name="probabilistic_roadmap",
         namespace="",
         output="screen",
-        arguments=["--ros-args", "--log-level", "INFO"],
+        arguments=["--ros-args", "--log-level", "WARN"],
         parameters=[
             {
                 "connection_distance": 0.15,
-                "enable_plot": False,
+                "enable_plot": True,
                 "goal": goal,
                 "grid_size": 0.1,
                 "node_count": 250,
@@ -59,7 +60,7 @@ def generate_launch_description():
         name="wall_follower",
         namespace="",
         output="screen",
-        arguments=["--ros-args", "--log-level", "INFO"],
+        arguments=["--ros-args", "--log-level", "WARN"],
         parameters=[{"enable_localization": True}],
     )
 
@@ -69,7 +70,7 @@ def generate_launch_description():
         name="pure_pursuit",
         namespace="",
         output="screen",
-        arguments=["--ros-args", "--log-level", "INFO"],
+        arguments=["--ros-args", "--log-level", "WARN"],
         parameters=[{"lookahead_distance": 0.3}],
     )
 

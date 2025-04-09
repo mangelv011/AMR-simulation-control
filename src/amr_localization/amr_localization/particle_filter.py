@@ -67,6 +67,7 @@ class ParticleFilter:
         self._timestamp = datetime.datetime.now(pytz.timezone("Europe/Madrid")).strftime(
             "%Y-%m-%d_%H-%M-%S"
         )
+        self._interval = 20
 
     def compute_pose(self) -> tuple[bool, tuple[float, float, float]]:
         """Computes the pose estimate when the particles form a single DBSCAN cluster.
@@ -361,7 +362,7 @@ class ParticleFilter:
         x, y, theta = particle
 
         # Get the LiDAR rays from the particle position
-        indices = tuple(range(0, 240, 30))  # con ,30 hay index error
+        indices = tuple(range(0, 240, self._interval)) 
         lidar_segments = self._lidar_rays((x, y, theta), indices)
 
         # For each ray, check if it collides with the map
@@ -445,7 +446,7 @@ class ParticleFilter:
         # Get predicted measurements for this particle
         predicted_measurements = self._sense(particle)
      
-        measurements = [measurements[i] for i in range(0,240,30)]
+        measurements = [measurements[i] for i in range(0,240,self._interval)]
 
         # Compare each real measurement with the predicted one
         for i, (measured, predicted) in enumerate(zip(measurements, predicted_measurements)):

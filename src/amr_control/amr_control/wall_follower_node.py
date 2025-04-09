@@ -77,7 +77,7 @@ class WallFollowerNode(LifecycleNode):
             ts = message_filters.ApproximateTimeSynchronizer(
                 self._subscribers,
                 queue_size=10,
-                slop=1  # Reducido de 9 a 1 para mejor sincronización
+                slop=9  # Reducido de 9 a 1 para mejor sincronización
             )
             ts.registerCallback(self._compute_commands_callback)
 
@@ -120,7 +120,6 @@ class WallFollowerNode(LifecycleNode):
 
         """
         if not pose_msg.localized:
-            print("Using WallFollower", flush=True)
             # TODO: 2.8. Parse the odometry from the Odometry message (i.e., read z_v and z_w).
             z_v: float = odom_msg.twist.twist.linear.x 
             z_w: float = odom_msg.twist.twist.angular.z
