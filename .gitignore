@@ -1,6 +1,12 @@
 devel/
 logs/
 build/
+install/
+src/amr_localization/images/
+src/amr_planning/images/
+.devcontainer/
+.vscode/
+log/
 bin/
 lib/
 msg_gen/
