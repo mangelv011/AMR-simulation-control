@@ -57,14 +57,19 @@ class PurePursuit:
         
         # Calculate angle alpha (angle between robot's heading and target)
         alpha = np.arctan2(dy, dx) - theta
-        angle_threshold = 0.2  # radians (about 45 degrees)
+
+        alpha_norm = (alpha + np.pi) % (2 * np.pi) - np.pi # Normalize angle to [-pi, pi]
+        angle_threshold = np.pi/6.5  # radians (about 45 degrees)
         # Make the robot rotate in place when the angle error is large
-        if abs(alpha) < angle_threshold: 
+        if abs(alpha_norm) < angle_threshold: 
             self._aligned = True
         if not self._aligned:
             v = 0.0  # Stop forward movement
-            w = 1.0 * np.sign(alpha)  # Rotate in the direction of the error
+            w = 1 * np.sign(alpha_norm)  # Rotate in the direction of the error
+            print(abs(alpha_norm), flush=True)
             return v, w
+            
+        
     
         # Pure pursuit formula: w = (2*v*sin(alpha))/(L)
         # Where L is the lookahead distance

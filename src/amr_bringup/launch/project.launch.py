@@ -6,8 +6,8 @@ import math
 
 def generate_launch_description():
     world = "project"
-    start = (-1.0, -1.0, -math.radians(90))
-    goal = (-0.6, 1.0)
+    start = (1.0, 1.0, math.radians(90))
+    goal = (-1.0, 0.6)
     
 
     particle_filter_node = LifecycleNode(
@@ -39,15 +39,15 @@ def generate_launch_description():
         arguments=["--ros-args", "--log-level", "WARN"],
         parameters=[
             {
-                "connection_distance": 0.15,
+                "connection_distance": 0.12,
                 "enable_plot": True,
                 "goal": goal,
                 "grid_size": 0.1,
-                "node_count": 250,
+                "node_count": 300,
                 "obstacle_safety_distance": 0.12,
-                "smoothing_additional_points": 3,
+                "smoothing_additional_points": 1,
                 "smoothing_data_weight": 0.1,
-                "smoothing_smooth_weight": 0.25,
+                "smoothing_smooth_weight": 0.1,
                 "use_grid": True,
                 "world": world,
             }
