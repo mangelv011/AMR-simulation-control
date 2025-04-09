@@ -21,7 +21,7 @@ def generate_launch_description():
             {
                 "enable_plot": True,
                 "global_localization": True,
-                "particles": 2000,
+                "particles": 1500, # 2000
                 "sigma_v": 0.05,
                 "sigma_w": 0.1,
                 "sigma_z": 0.2,

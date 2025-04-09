@@ -31,7 +31,7 @@ class ParticleFilterNode(LifecycleNode):
         self.declare_parameter("sigma_v", 0.1)
         self.declare_parameter("sigma_w", 0.1)
         self.declare_parameter("sigma_z", 0.1)
-        self.declare_parameter("steps_btw_sense_updates", 10)
+        self.declare_parameter("steps_btw_sense_updates", 15)
         self.declare_parameter("world", "lab03")
 
         self._pose_publisher = None
