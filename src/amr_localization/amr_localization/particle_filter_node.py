@@ -8,6 +8,7 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 
 import math
+import numpy as np  # # ADDED
 import os
 import time
 import traceback
@@ -35,6 +36,12 @@ class ParticleFilterNode(LifecycleNode):
         self.declare_parameter("world", "lab03")
 
         self._pose_publisher = None
+        
+        # # ADDED: Variables para acumular la odometría
+        self._accumulated_distance = 0.0  
+        self._accumulated_rotation = 0.0
+        self._odom_samples = 0
+        self._dt = 0.05  # Valor predeterminado, se actualizará en on_configure
 
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
         """Handles a configuring transition.
@@ -47,7 +54,7 @@ class ParticleFilterNode(LifecycleNode):
 
         try:
             # Parameters
-            dt = self.get_parameter("dt").get_parameter_value().double_value
+            self._dt = self.get_parameter("dt").get_parameter_value().double_value  # # ADDED: Guardar dt como atributo
             self._enable_plot = self.get_parameter("enable_plot").get_parameter_value().bool_value
             global_localization = (
                 self.get_parameter("global_localization").get_parameter_value().bool_value
@@ -76,7 +83,7 @@ class ParticleFilterNode(LifecycleNode):
                 os.path.join(os.path.dirname(__file__), "..", "maps", world + ".json")
             )
             self._particle_filter = ParticleFilter(
-                dt,
+                self._dt,  # Usar el atributo guardado
                 map_path,
                 particle_count=particles,
                 sigma_v=sigma_v,
@@ -150,16 +157,26 @@ class ParticleFilterNode(LifecycleNode):
 
         """
         # Parse measurements
-        # TODO: 2.8. Parse the odometry from the Odometry message (i.e., read z_v and z_w).
         z_v: float = odom_msg.twist.twist.linear.x
         z_w: float = odom_msg.twist.twist.angular.z
-        
-        # TODO: 2.9. Parse LiDAR measurements from the LaserScan message (i.e., read z_scan).
         z_scan: list[float] = scan_msg.ranges
 
-        # Execute particle filter
-        self._execute_motion_step(z_v, z_w)
-        x_h, y_h, theta_h = self._execute_measurement_step(z_scan)
+        # # ADDED: Acumular odometría
+        self._accumulate_odometry(z_v, z_w)
+        
+        # Verificar si es momento de hacer una actualización completa
+        should_update = self._localized or not self._steps % self._steps_btw_sense_updates
+        
+        x_h, y_h, theta_h = float("inf"), float("inf"), float("inf")
+        
+        if should_update:
+            # Ejecutar actualización integrada de movimiento y medición
+            x_h, y_h, theta_h = self._execute_integrated_update(z_scan)
+        else:
+            # Solo para visualización, seguir mostrando movimiento en cada paso
+            if self._enable_plot:
+                self._execute_motion_step(z_v, z_w)
+        
         self._steps += 1
 
         # Publish
@@ -236,6 +253,77 @@ class ParticleFilterNode(LifecycleNode):
             msg.pose.orientation.z = quat[3]
 
         self._pose_publisher.publish(msg)
+
+    def _accumulate_odometry(self, z_v: float, z_w: float) -> None:
+        """Acumula los datos de odometría entre actualizaciones de remuestreo.
+        
+        Args:
+            z_v: Velocidad lineal [m/s].
+            z_w: Velocidad angular [rad/s].
+        """
+        # # ADDED: Método completo
+        # Para la velocidad lineal, acumulamos la distancia recorrida
+        # teniendo en cuenta si el robot se mueve hacia adelante o hacia atrás
+        self._accumulated_distance += z_v * self._dt  # Distancia = velocidad * tiempo
+        
+        # Para la velocidad angular, acumulamos la rotación total
+        self._accumulated_rotation += z_w * self._dt  # Rotación = velocidad angular * tiempo
+        
+        # Incrementar contador de muestras
+        self._odom_samples += 1
+        
+    def _execute_integrated_update(self, z_scan: list[float]) -> tuple[float, float, float]:
+        """Ejecuta una actualización integrada de movimiento y medición basada en la odometría acumulada.
+        
+        Args:
+            z_scan: Mediciones de distancia del LiDAR.
+            
+        Returns:
+            Pose estimada (x_h, y_h, theta_h) [m, m, rad]; inf si no se puede calcular.
+        """
+        # # ADDED: Método completo
+        pose = (float("inf"), float("inf"), float("inf"))
+        
+        # Verificar que hayamos acumulado muestras
+        if self._odom_samples > 0:
+            # Calcular velocidades equivalentes para todo el período acumulado
+            # Esto es un promedio de la velocidad a lo largo del tiempo
+            effective_v = self._accumulated_distance / (self._odom_samples * self._dt)
+            effective_w = self._accumulated_rotation / (self._odom_samples * self._dt)
+            
+            # Ejecutar un único paso de movimiento con las velocidades equivalentes
+            start_time = time.perf_counter()
+            self._particle_filter.move(effective_v, effective_w)
+            move_time = time.perf_counter() - start_time
+            self.get_logger().info(f"Integrated move time: {move_time:7.3f} s")
+            
+            if self._enable_plot:
+                self._particle_filter.show("Integrated Move", save_figure=True)
+                
+            # Reiniciar acumuladores para el siguiente período
+            self._accumulated_distance = 0.0
+            self._accumulated_rotation = 0.0
+            self._odom_samples = 0
+            
+            # Ejecutar el paso de medición (remuestreo)
+            start_time = time.perf_counter()
+            self._particle_filter.resample(z_scan)
+            sense_time = time.perf_counter() - start_time
+            self.get_logger().info(f"Sense step time: {sense_time:6.3f} s")
+            
+            if self._enable_plot:
+                self._particle_filter.show("Sense", save_figure=True)
+                
+            # Calcular la pose estimada
+            start_time = time.perf_counter()
+            self._localized, pose = self._particle_filter.compute_pose()
+            clustering_time = time.perf_counter() - start_time
+            self.get_logger().info(f"Clustering time: {clustering_time:6.3f} s")
+            
+            # Reiniciar contador de pasos
+            self._steps = 0
+        
+        return pose
 
 
 def main(args=None):

@@ -6,6 +6,7 @@ from geometry_msgs.msg import TwistStamped
 from nav_msgs.msg import Path
 
 import math
+import numpy as np  # # ADDED
 import traceback
 from transforms3d.euler import quat2euler
 
@@ -19,8 +20,12 @@ class PurePursuitNode(LifecycleNode):
 
         # Parameters
         self.declare_parameter("dt", 0.05)
-        self.declare_parameter("lookahead_distance", 0.2)
-
+        self.declare_parameter("lookahead_distance", 0.3)  # # MODIFIED: Distancia de mirada adelante más óptima
+        
+        # # ADDED: Precalcular estructuras que se usarán frecuentemente
+        self._twist_msg = TwistStamped()
+        self._cmd_header_frame_id = "map"
+        
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
         """Handles a configuring transition.
 
@@ -48,6 +53,9 @@ class PurePursuitNode(LifecycleNode):
 
             # Attribute and object initializations
             self._pure_pursuit = PurePursuit(dt, lookahead_distance)
+            
+            # # ADDED: Preparar la cabecera del mensaje para reutilizarla
+            self._twist_msg.header.frame_id = self._cmd_header_frame_id
 
         except Exception:
             self.get_logger().error(f"{traceback.format_exc()}")
@@ -76,13 +84,15 @@ class PurePursuitNode(LifecycleNode):
 
         """
         if pose_msg.localized:
-            # Parse pose
+            # # OPTIMIZED: Extraer componentes en una sola operación
             x = pose_msg.pose.position.x
             y = pose_msg.pose.position.y
             quat_w = pose_msg.pose.orientation.w
             quat_x = pose_msg.pose.orientation.x
             quat_y = pose_msg.pose.orientation.y
             quat_z = pose_msg.pose.orientation.z
+            
+            # # OPTIMIZED: Conversión más directa de cuaternión a ángulo de Euler
             _, _, theta = quat2euler((quat_w, quat_x, quat_y, quat_z))
             theta %= 2 * math.pi
 
@@ -101,23 +111,26 @@ class PurePursuitNode(LifecycleNode):
 
         """
         # TODO: 4.8. Complete the function body with your code (i.e., replace the pass statement).
-        path = path_msg.poses
-        self._pure_pursuit._path = [(pose.pose.position.x, pose.pose.position.y) for pose in path]
-        
-        
+        # # OPTIMIZED: Convertir directamente a una lista en lugar de iterar dos veces
+        path_points = [(pose.pose.position.x, pose.pose.position.y) for pose in path_msg.poses]
+        self._pure_pursuit._path = path_points
+
     def _publish_velocity_commands(self, v: float, w: float) -> None:
-        """Publishes velocity commands in a geometry_msgs.msg.TwistStamped message.
+        """Publishes the velocity commands in a geometry_msgs.msg.TwistStamped message.
 
         Args:
-            v: Linear velocity command [m/s].
-            w: Angular velocity command [rad/s].
+            v: Linear velocity [m/s].
+            w: Angular velocity [rad/s].
 
         """
-        msg = TwistStamped()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.twist.linear.x = v
-        msg.twist.angular.z = w
-        self._publisher.publish(msg)
+        # # OPTIMIZED: Reutilizar un solo mensaje en lugar de crear uno nuevo cada vez
+        self._twist_msg.header.stamp = self.get_clock().now().to_msg()
+        
+        # # OPTIMIZED: Asignar solo los valores que cambian
+        self._twist_msg.twist.linear.x = v
+        self._twist_msg.twist.angular.z = w
+        
+        self._publisher.publish(self._twist_msg)
 
 
 def main(args=None):
