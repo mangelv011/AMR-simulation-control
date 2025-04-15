@@ -38,18 +38,19 @@ def select_random_start_goal():
     
     # Print selected orientation for information
     print(f"Selected orientation: {orientation_name} ({math.degrees(orientation_rad)} degrees)")
-    
+    start = (1.0, -1.0, orientation_rad)
+    goal = (0.2, -0.6)
     return start, goal
 
 
 def generate_launch_description():
     world = "project"
     
-    # Seleccionar aleatoriamente el start y goal
+    # Randomly select start and goal
     start, goal = select_random_start_goal()
     
-    # Imprimir la combinación seleccionada para información
-    print(f"Utilizando combinación aleatoria de puntos:")
+    # Print the selected combination for information
+    print(f"Using random combination of points:")
     print(f"Start: {start}")
     print(f"Goal: {goal}")
 
@@ -64,12 +65,12 @@ def generate_launch_description():
             {
                 "enable_plot": False,
                 "global_localization": True,
-                "particles": 2000, # 2000
+                "particles": 2000,  # 2000
                 "sigma_v": 0.05,
                 "sigma_w": 0.1,
                 "sigma_z": 0.2,
                 "world": world,
-                "use_ekf_when_localized": True, # Activar para mejorar rendimiento
+                "use_ekf_when_localized": True,  # Enable for improved performance
             }
         ],
     )

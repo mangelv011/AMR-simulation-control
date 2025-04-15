@@ -16,18 +16,18 @@ class PurePursuit:
         self._path: list[tuple[float, float]] = []
         self._aligned = False
         
-        # # ADDED: Precalcular valores constantes
+        # ADDED: Precalculate constant values
         self._lookahead_squared = lookahead_distance ** 2
-        self._angle_threshold = np.pi/4.0  # # MODIFIED: Umbral más permisivo (45 grados)
-        self._base_velocity = 0.4  # m/s  # # MODIFIED: Velocidad base más alta
-        self._min_velocity = 0.15  # # ADDED: Velocidad mínima más alta
+        self._angle_threshold = np.pi/4.0  # MODIFIED: More permissive threshold (45 degrees)
+        self._base_velocity = 0.4  # m/s  # MODIFIED: Higher base velocity
+        self._min_velocity = 0.15  # ADDED: Higher minimum velocity
         
-        # # ADDED: Cache para puntos más cercanos
+        # ADDED: Cache for closest points
         self._last_closest_idx = 0
         
-        # # ADDED: Factores para suavizado de velocidad
-        self._max_angular_vel = 1.5  # Velocidad angular máxima
-        self._slowdown_factor = 0.5  # Factor de reducción al final del camino
+        # ADDED: Factors for velocity smoothing
+        self._max_angular_vel = 1.5  # Maximum angular velocity
+        self._slowdown_factor = 0.5  # Reduction factor at the end of the path
 
     def compute_commands(self, x: float, y: float, theta: float) -> tuple[float, float]:
         """Pure pursuit controller implementation.
@@ -57,11 +57,11 @@ class PurePursuit:
         # Find target point at lookahead distance
         target_point = self._find_target_point((x, y), closest_idx)
         
-        # # OPTIMIZED: Calcular diferencias una vez y reutilizarlas
+        # OPTIMIZED: Calculate differences once and reuse them
         dx = target_point[0] - x
         dy = target_point[1] - y
         
-        # # OPTIMIZED: Usar arctan2 directamente 
+        # OPTIMIZED: Use arctan2 directly
         alpha = np.arctan2(dy, dx) - theta
         alpha_norm = (alpha + np.pi) % (2 * np.pi) - np.pi  # Normalize angle to [-pi, pi]
         
@@ -69,32 +69,32 @@ class PurePursuit:
         if abs(alpha_norm) < self._angle_threshold: 
             self._aligned = True
         if not self._aligned:
-            # # MODIFIED: Rotación más rápida para alinearse
+            # MODIFIED: Faster rotation to align
             return 0.0, np.sign(alpha_norm) * self._max_angular_vel
             
-        # # MODIFIED: Mejorar el cálculo de velocidad lineal
+        # MODIFIED: Improve linear velocity calculation
         path_len = len(self._path)
-        # Calcular factor de progreso en el camino (0-1)
+        # Calculate path progress factor (0-1)
         progress = min(1.0, max(0.0, closest_idx / max(1, path_len - 1)))
         
-        # Determinar velocidad basada en:
-        # 1. Progreso en el camino (reducir velocidad al final)
-        # 2. Ángulo de desviación (reducir velocidad en curvas)
-        # 3. Velocidad base
+        # Determine velocity based on:
+        # 1. Progress along the path (reduce speed at the end)
+        # 2. Deviation angle (reduce speed in curves)
+        # 3. Base velocity
         
-        if closest_idx > path_len - 5:  # Últimos 5 puntos del camino
-            # Reducción gradual al final del camino
+        if closest_idx > path_len - 5:  # Last 5 points of the path
+            # Gradual reduction at the end of the path
             v = max(self._min_velocity, self._base_velocity * (1.0 - progress * self._slowdown_factor))
         else:
-            # Calcular factor de reducción basado en el ángulo (1.0 en línea recta, menor en curvas)
+            # Calculate reduction factor based on angle (1.0 in straight line, less in curves)
             angle_factor = max(0.7, 1.0 - abs(alpha_norm) / np.pi)
             v = self._base_velocity * angle_factor
         
-        # # MODIFIED: Calcular velocidad angular con limitación más suave
-        # Calcular w basado en la fórmula de pure pursuit pero limitar para movimientos más suaves
+        # MODIFIED: Calculate angular velocity with smoother limitation
+        # Calculate w based on the pure pursuit formula but limit for smoother movements
         raw_w = 2.0 * v * np.sin(alpha_norm) / self._lookahead_distance
         
-        # Limitar w para evitar cambios bruscos que reducirían la velocidad
+        # Limit w to avoid abrupt changes that would reduce speed
         w = np.clip(raw_w, -self._max_angular_vel, self._max_angular_vel)
         
         return v, w
@@ -108,7 +108,7 @@ class PurePursuit:
     def path(self, value: list[tuple[float, float]]) -> None:
         """Path setter."""
         self._path = value
-        # # ADDED: Resetear el índice de caché al cambiar el path
+        # ADDED: Reset cache index when changing the path
         self._last_closest_idx = 0
         self._aligned = False
 
@@ -129,7 +129,7 @@ class PurePursuit:
         if not self._path:
             return (0.0, 0.0), 0
         
-        # # OPTIMIZED: Buscar desde el último punto más cercano conocido
+        # OPTIMIZED: Search from the last known closest point
         start_idx = max(0, self._last_closest_idx - 2)
         end_idx = min(len(self._path), self._last_closest_idx + 10)
         
@@ -138,10 +138,10 @@ class PurePursuit:
         closest_xy = self._path[start_idx]
         min_distance = (self._path[start_idx][0] - x)**2 + (self._path[start_idx][1] - y)**2
         
-        # # OPTIMIZED: Recorrer solo una ventana de puntos probables
+        # OPTIMIZED: Traverse only a window of probable points
         for i in range(start_idx, end_idx):
             point = self._path[i]
-            # # OPTIMIZED: Usar distancia al cuadrado en lugar de raíz cuadrada
+            # OPTIMIZED: Use squared distance instead of square root
             distance = (point[0] - x)**2 + (point[1] - y)**2
             
             if distance < min_distance:
@@ -149,10 +149,10 @@ class PurePursuit:
                 closest_idx = i
                 closest_xy = point
         
-        # # OPTIMIZED: Si el punto más cercano está al borde de nuestra ventana,
-        # #           ampliar la búsqueda para asegurar que encontramos el mínimo global
+        # OPTIMIZED: If the closest point is at the edge of our window,
+        #            expand the search to ensure we find the global minimum
         if closest_idx == end_idx - 1 and end_idx < len(self._path):
-            # Buscar en el resto del camino
+            # Search the rest of the path
             for i in range(end_idx, len(self._path)):
                 point = self._path[i]
                 distance = (point[0] - x)**2 + (point[1] - y)**2
@@ -162,10 +162,10 @@ class PurePursuit:
                     closest_idx = i
                     closest_xy = point
                 else:
-                    # Si la distancia empieza a aumentar, podemos parar
+                    # If distance starts increasing, we can stop
                     break
         
-        # # ADDED: Actualizar caché con el nuevo índice encontrado
+        # ADDED: Update cache with the newly found index
         self._last_closest_idx = closest_idx
         
         return closest_xy, closest_idx
@@ -190,11 +190,11 @@ class PurePursuit:
             # Return last point if available, otherwise origin
             return self._path[-1] if self._path else origin_xy
         
-        # # OPTIMIZED: Iniciar desde el punto más cercano + 1 para evitar buscar atrás
+        # OPTIMIZED: Start from the closest point + 1 to avoid searching backwards
         current_idx = max(origin_idx, 0)
         accumulated_distance = 0.0
         
-        # # OPTIMIZED: Precalcular valores para evitar cálculos repetidos
+        # OPTIMIZED: Precalculate values to avoid repeated calculations
         lookahead_distance = self._lookahead_distance
         
         # Look for a point that's at least lookahead_distance away
@@ -202,18 +202,18 @@ class PurePursuit:
             current_point = self._path[current_idx]
             next_point = self._path[current_idx + 1]
             
-            # # OPTIMIZED: Cálculo de distancia usando dx y dy una sola vez
+            # OPTIMIZED: Calculate distance using dx and dy only once
             dx = next_point[0] - current_point[0]
             dy = next_point[1] - current_point[1]
             segment_length = np.sqrt(dx*dx + dy*dy)
             
             # Check if lookahead point is on this segment
             if accumulated_distance + segment_length >= lookahead_distance:
-                # # OPTIMIZED: Interpolación lineal más directa
+                # OPTIMIZED: More direct linear interpolation
                 remaining_distance = lookahead_distance - accumulated_distance
                 ratio = remaining_distance / segment_length
                 
-                # # OPTIMIZED: Cálculo vectorial más eficiente
+                # OPTIMIZED: More efficient vector calculation
                 return (current_point[0] + ratio * dx, 
                         current_point[1] + ratio * dy)
             
