@@ -64,7 +64,7 @@ def generate_launch_description():
             {
                 "enable_plot": False,
                 "global_localization": True,
-                "particles": 1200, # 2000
+                "particles": 2000, # 2000
                 "sigma_v": 0.05,
                 "sigma_w": 0.1,
                 "sigma_z": 0.2,
@@ -88,7 +88,7 @@ def generate_launch_description():
                 "goal": goal,
                 "grid_size": 0.1,
                 "node_count": 300,
-                "obstacle_safety_distance": 0.15,
+                "obstacle_safety_distance": 0.17,
                 "smoothing_additional_points": 1,
                 "smoothing_data_weight": 0.1,
                 "smoothing_smooth_weight": 0.1,

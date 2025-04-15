@@ -32,7 +32,7 @@ class ParticleFilterNode(LifecycleNode):
         self.declare_parameter("sigma_v", 0.1)
         self.declare_parameter("sigma_w", 0.1)
         self.declare_parameter("sigma_z", 0.1)
-        self.declare_parameter("steps_btw_sense_updates", 25)
+        self.declare_parameter("steps_btw_sense_updates", 20)
         self.declare_parameter("world", "lab03")
         self.declare_parameter("use_ekf_when_localized", True)  # Usar EKF cuando el robot está localizado
 
