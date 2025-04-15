@@ -1,14 +1,57 @@
 from launch import LaunchDescription
 from launch_ros.actions import LifecycleNode, Node
-
+import random
 import math
+
+
+def select_random_start_goal():
+    """
+    Randomly selects a start and goal position combination and a random orientation.
+    
+    Returns:
+        tuple: Pair of tuples (start, goal) with the selected coordinates
+               where start includes random orientation (x, y, theta)
+    """
+    # Define the possible start and goal position pairs
+    start_goal_positions = [
+        ((-1.0, -1.0), (-1.0, 0.6)),
+        ((-1.0, 0.6), (-1.0, -1.0)),
+        ((-0.6, 1.0), (1.0, 1.0)),
+        ((1.0, 1.0), (-0.6, 1.0))
+    ]
+    
+    # Define possible orientations in radians (north, east, south, west)
+    orientations = {
+        "north": 0.0,                # 0 degrees
+        "east": math.pi/2,           # 90 degrees
+        "south": math.pi,            # 180 degrees
+        "west": 3*math.pi/2          # 270 degrees
+    }
+    
+    # Select random position pair and random orientation
+    start_pos, goal = random.choice(start_goal_positions)
+    orientation_name = random.choice(list(orientations.keys()))
+    orientation_rad = orientations[orientation_name]
+    
+    # Create start tuple with position and orientation
+    start = (start_pos[0], start_pos[1], orientation_rad)
+    
+    # Print selected orientation for information
+    print(f"Selected orientation: {orientation_name} ({math.degrees(orientation_rad)} degrees)")
+    
+    return start, goal
 
 
 def generate_launch_description():
     world = "project"
-    start = (1, -1, math.radians(90))
-    goal = (0.2, -0.6)
     
+    # Seleccionar aleatoriamente el start y goal
+    start, goal = select_random_start_goal()
+    
+    # Imprimir la combinación seleccionada para información
+    print(f"Utilizando combinación aleatoria de puntos:")
+    print(f"Start: {start}")
+    print(f"Goal: {goal}")
 
     particle_filter_node = LifecycleNode(
         package="amr_localization",
@@ -19,13 +62,14 @@ def generate_launch_description():
         arguments=["--ros-args", "--log-level", "WARN"],
         parameters=[
             {
-                "enable_plot": True,
+                "enable_plot": False,
                 "global_localization": True,
-                "particles": 500, # 2000
+                "particles": 750, # 2000
                 "sigma_v": 0.05,
                 "sigma_w": 0.1,
                 "sigma_z": 0.2,
                 "world": world,
+                "use_ekf_when_localized": True, # Activar para mejorar rendimiento
             }
         ],
     )

@@ -97,6 +97,5 @@ class WallFollower:
         self.last_left = left_distance
         self.last_right = right_distance
 
-        print(f"Right: {right_distance}")
-        print(f"Left: {left_distance}")
+ 
         return v, w

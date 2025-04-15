@@ -32,8 +32,9 @@ class ParticleFilterNode(LifecycleNode):
         self.declare_parameter("sigma_v", 0.1)
         self.declare_parameter("sigma_w", 0.1)
         self.declare_parameter("sigma_z", 0.1)
-        self.declare_parameter("steps_btw_sense_updates", 15)
+        self.declare_parameter("steps_btw_sense_updates", 25)
         self.declare_parameter("world", "lab03")
+        self.declare_parameter("use_ekf_when_localized", True)  # Usar EKF cuando el robot está localizado
 
         self._pose_publisher = None
         
@@ -44,17 +45,18 @@ class ParticleFilterNode(LifecycleNode):
         self._dt = 0.05  # Valor predeterminado, se actualizará en on_configure
 
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
-        """Handles a configuring transition.
+        """Node configuration callback. Creates a particle filter object and initializes subscribers.
 
         Args:
             state: Current lifecycle state.
 
-        """
-        self.get_logger().info(f"Transitioning from '{state.label}' to 'inactive' state.")
+        Returns:
+            Success if configuration is successful, failure otherwise.
 
+        """
         try:
             # Parameters
-            self._dt = self.get_parameter("dt").get_parameter_value().double_value  # # ADDED: Guardar dt como atributo
+            self._dt = self.get_parameter("dt").get_parameter_value().double_value
             self._enable_plot = self.get_parameter("enable_plot").get_parameter_value().bool_value
             global_localization = (
                 self.get_parameter("global_localization").get_parameter_value().bool_value
@@ -75,6 +77,7 @@ class ParticleFilterNode(LifecycleNode):
                 self.get_parameter("steps_btw_sense_updates").get_parameter_value().integer_value
             )
             world = self.get_parameter("world").get_parameter_value().string_value
+            use_ekf = self.get_parameter("use_ekf_when_localized").get_parameter_value().bool_value
 
             # Attribute and object initializations
             self._localized = False
@@ -92,6 +95,7 @@ class ParticleFilterNode(LifecycleNode):
                 global_localization=global_localization,
                 initial_pose=initial_pose,
                 initial_pose_sigma=initial_pose_sigma,
+                use_ekf_when_localized=use_ekf
             )
 
             if self._enable_plot:
@@ -173,9 +177,12 @@ class ParticleFilterNode(LifecycleNode):
             # Ejecutar actualización integrada de movimiento y medición
             x_h, y_h, theta_h = self._execute_integrated_update(z_scan)
         else:
-            # Solo para visualización, seguir mostrando movimiento en cada paso
+            # Siempre ejecutar el movimiento independientemente de la visualización
+            self._execute_motion_step(z_v, z_w)
+            
+            # Visualizar solo si está habilitado
             if self._enable_plot:
-                self._execute_motion_step(z_v, z_w)
+                self._particle_filter.show("Move", save_figure=True)
         
         self._steps += 1
 
@@ -223,9 +230,6 @@ class ParticleFilterNode(LifecycleNode):
         move_time = time.perf_counter() - start_time
 
         self.get_logger().info(f"Move step time: {move_time:7.3f} s")
-
-        if self._enable_plot:
-            self._particle_filter.show("Move", save_figure=True)
 
     def _publish_pose_estimate(self, x_h: float, y_h: float, theta_h: float) -> None:
         """Publishes the robot's pose estimate in a custom amr_msgs.msg.PoseStamped message.
@@ -281,47 +285,39 @@ class ParticleFilterNode(LifecycleNode):
         Returns:
             Pose estimada (x_h, y_h, theta_h) [m, m, rad]; inf si no se puede calcular.
         """
-        # # ADDED: Método completo
         pose = (float("inf"), float("inf"), float("inf"))
         
         # Verificar que hayamos acumulado muestras
         if self._odom_samples > 0:
             # Calcular velocidades equivalentes para todo el período acumulado
-            # Esto es un promedio de la velocidad a lo largo del tiempo
             effective_v = self._accumulated_distance / (self._odom_samples * self._dt)
             effective_w = self._accumulated_rotation / (self._odom_samples * self._dt)
             
-            # Ejecutar un único paso de movimiento con las velocidades equivalentes
+            # Usar el método combinado que maneja automáticamente PF y EKF
             start_time = time.perf_counter()
-            self._particle_filter.move(effective_v, effective_w)
-            move_time = time.perf_counter() - start_time
-            self.get_logger().info(f"Integrated move time: {move_time:7.3f} s")
+            self._localized, pose = self._particle_filter.move_and_resample(effective_v, effective_w, z_scan)
+            total_time = time.perf_counter() - start_time
             
+            # Registrar información sobre el tiempo de ejecución
+            self.get_logger().info(f"Total update time: {total_time:.6f} s")
+            
+            # Visualizar solo si está habilitado
             if self._enable_plot:
-                self._particle_filter.show("Integrated Move", save_figure=True)
+                self._particle_filter.show("Update", save_figure=True)
                 
             # Reiniciar acumuladores para el siguiente período
             self._accumulated_distance = 0.0
             self._accumulated_rotation = 0.0
             self._odom_samples = 0
-            
-            # Ejecutar el paso de medición (remuestreo)
-            start_time = time.perf_counter()
-            self._particle_filter.resample(z_scan)
-            sense_time = time.perf_counter() - start_time
-            self.get_logger().info(f"Sense step time: {sense_time:6.3f} s")
-            
-            if self._enable_plot:
-                self._particle_filter.show("Sense", save_figure=True)
-                
-            # Calcular la pose estimada
-            start_time = time.perf_counter()
-            self._localized, pose = self._particle_filter.compute_pose()
-            clustering_time = time.perf_counter() - start_time
-            self.get_logger().info(f"Clustering time: {clustering_time:6.3f} s")
-            
-            # Reiniciar contador de pasos
             self._steps = 0
+            
+            # Registrar información sobre la localización
+            if self._localized:
+                self.get_logger().info(f"Robot localizado en: ({pose[0]:.2f}, {pose[1]:.2f}, {pose[2]:.2f})")
+                
+                # Mostrar método usado (PF o EKF)
+                method = "EKF" if self._particle_filter._using_ekf else "Filtro de Partículas"
+                self.get_logger().info(f"Método actual: {method}")
         
         return pose
 

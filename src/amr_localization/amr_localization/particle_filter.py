@@ -8,6 +8,7 @@ import random
 from amr_localization.maps import Map
 from matplotlib import pyplot as plt
 from sklearn.cluster import DBSCAN
+from amr_localization.extended_kalman_filter import ExtendedKalmanFilter
 
 
 class ParticleFilter:
@@ -26,6 +27,7 @@ class ParticleFilter:
         global_localization: bool = True,
         initial_pose: tuple[float, float, float] = (float("nan"), float("nan"), float("nan")),
         initial_pose_sigma: tuple[float, float, float] = (float("nan"), float("nan"), float("nan")),
+        use_ekf_when_localized: bool = True,  # Activar EKF cuando el robot está localizado
     ):
         """Particle filter class initializer.
 
@@ -41,7 +43,7 @@ class ParticleFilter:
             global_localization: First localization if True, pose tracking otherwise.
             initial_pose: Approximate initial robot pose (x, y, theta) for tracking [m, m, rad].
             initial_pose_sigma: Standard deviation of the initial pose guess [m, m, rad].
-
+            use_ekf_when_localized: Use EKF when robot is localized for better performance.
         """
         self._dt: float = dt
         self._initial_particle_count: int = particle_count
@@ -52,6 +54,17 @@ class ParticleFilter:
         self._sigma_w: float = sigma_w
         self._sigma_z: float = sigma_z
         self._iteration: int = 0
+        
+        # Variables para el filtro EKF
+        self._global_localization = global_localization
+        self._initial_pose = initial_pose
+        self._initial_pose_sigma = initial_pose_sigma
+        self._map_path = map_path
+        self._use_ekf_when_localized = use_ekf_when_localized
+        self._using_ekf = False
+        self._ekf = None
+        self._ekf_consecutive_failures = 0
+        self._ekf_failure_threshold = 5  # Número de fallos consecutivos para volver a PF
 
         self._map = Map(
             map_path,
@@ -145,7 +158,7 @@ class ParticleFilter:
                 # Reduce particles if localized with fast array slicing
                 if len(self._particles) > 100:
                     # Get indices where mask is True
-                    valid_indices = np.where(mask)[0][:100]
+                    valid_indices = np.where(mask)[0][:70] # numero de particulas cuando el robot está localizado
                     self._particles = self._particles[valid_indices]
         
         return localized, pose
@@ -531,3 +544,104 @@ class ParticleFilter:
             probability *= measurement_prob
 
         return probability
+
+    def move_and_resample(self, v: float, w: float, measurements: list[float]) -> tuple[bool, tuple[float, float, float]]:
+        """
+        Método optimizado que combina movimiento y remuestreo, y gestiona el cambio entre PF y EKF.
+        Usa PF para localización global y EKF cuando el robot está localizado.
+        
+        Args:
+            v: Velocidad lineal [m/s].
+            w: Velocidad angular [rad/s].
+            measurements: Mediciones del sensor LiDAR [m].
+            
+        Returns:
+            localized: True si la pose estimada es válida.
+            pose: Pose estimada del robot (x, y, theta) [m, m, rad].
+        """
+        localized = False
+        pose = (float("inf"), float("inf"), float("inf"))
+        
+        # Si estamos usando EKF
+        if self._using_ekf:
+            try:
+                # Actualizar EKF con movimiento
+                self._ekf.predict(v, w)
+                
+                # Actualizar EKF con mediciones
+                self._ekf.update(measurements)
+                
+                # Obtener pose estimada
+                pose = self._ekf.get_pose()
+                localized = True
+                
+            except Exception as e:
+                print(f"Error en EKF: {e}. Volviendo a filtro de partículas.")
+                self._switch_to_particle_filter(pose)
+                localized = False
+        
+        # Si no estamos usando EKF (o acabamos de volver a PF)
+        if not self._using_ekf:
+            # Actualizar filtro de partículas con movimiento
+            self.move(v, w)
+            
+            # Actualizar filtro de partículas con mediciones
+            self.resample(measurements)
+            
+            # Obtener pose estimada
+            localized, pose = self.compute_pose()
+            
+            # Si se ha localizado y está configurado para usar EKF, cambiar a EKF
+            if localized and self._use_ekf_when_localized and not self._using_ekf:
+                self._switch_to_ekf(pose)
+        
+        return localized, pose
+        
+    def _switch_to_ekf(self, pose: tuple[float, float, float]) -> None:
+        """
+        Cambia del filtro de partículas al filtro de Kalman extendido.
+        
+        Args:
+            pose: Pose inicial para el EKF (x, y, theta) [m, m, rad].
+        """
+        print("Cambiando a filtro de Kalman extendido para mayor eficiencia...")
+        
+        # Inicializar EKF con la pose actual
+        self._ekf = ExtendedKalmanFilter(
+            dt=self._dt,
+            map_path=self._map_path,
+            initial_pose=pose,
+            sigma_v=self._sigma_v,
+            sigma_w=self._sigma_w,
+            sigma_z=self._sigma_z,
+            sensor_range_max=self._sensor_range_max,
+            sensor_range_min=self._sensor_range_min
+        )
+        
+        self._using_ekf = True
+        self._ekf_consecutive_failures = 0
+        
+    def _switch_to_particle_filter(self, pose: tuple[float, float, float]) -> None:
+        """
+        Vuelve del filtro de Kalman extendido al filtro de partículas.
+        
+        Args:
+            pose: Última pose estimada por el EKF (x, y, theta) [m, m, rad].
+        """
+        print("Volviendo a filtro de partículas...")
+        
+        # Inicializar partículas alrededor de la última pose estimada
+        # Usar una distribución más amplia para aumentar robustez
+        sigma_factor = 3.0  # Factor de ampliación de la sigma
+        initial_sigma = (0.2, 0.2, math.radians(20))  # Valores amplios pero no demasiado
+        self._particles = self._init_particles(
+            self._initial_particle_count,
+            False,  # Localización local, no global
+            pose, 
+            (initial_sigma[0] * sigma_factor, 
+             initial_sigma[1] * sigma_factor, 
+             initial_sigma[2] * sigma_factor)
+        )
+        
+        self._using_ekf = False
+        self._ekf = None
