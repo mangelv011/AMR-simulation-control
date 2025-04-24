@@ -27,7 +27,7 @@ class ParticleFilter:
         global_localization: bool = True,
         initial_pose: tuple[float, float, float] = (float("nan"), float("nan"), float("nan")),
         initial_pose_sigma: tuple[float, float, float] = (float("nan"), float("nan"), float("nan")),
-        use_ekf_when_localized: bool = True,  # Activar EKF cuando el robot está localizado
+        use_ekf_when_localized: bool = True,  # Enable EKF when the robot is localized
     ):
         """Particle filter class initializer.
 
@@ -55,7 +55,7 @@ class ParticleFilter:
         self._sigma_z: float = sigma_z
         self._iteration: int = 0
         
-        # Variables para el filtro EKF
+        # Variables for the EKF filter
         self._global_localization = global_localization
         self._initial_pose = initial_pose
         self._initial_pose_sigma = initial_pose_sigma
@@ -64,7 +64,7 @@ class ParticleFilter:
         self._using_ekf = False
         self._ekf = None
         self._ekf_consecutive_failures = 0
-        self._ekf_failure_threshold = 5  # Número de fallos consecutivos para volver a PF
+        self._ekf_failure_threshold = 5  # Number of consecutive failures to return to PF
 
         self._map = Map(
             map_path,
@@ -158,7 +158,7 @@ class ParticleFilter:
                 # Reduce particles if localized with fast array slicing
                 if len(self._particles) > 100:
                     # Get indices where mask is True
-                    valid_indices = np.where(mask)[0][:70] # numero de particulas cuando el robot está localizado
+                    valid_indices = np.where(mask)[0][:70] # number of particles when the robot is localized
                     self._particles = self._particles[valid_indices]
         
         return localized, pose
@@ -406,16 +406,16 @@ class ParticleFilter:
         while num_particles < particle_count:
             if global_localization:
                 theta = np.random.choice(valid_orientations)
-                # Generar posiciones aleatorias dentro de los límites del mapa
+                # Generate random positions within map limits
                 x = np.random.uniform(map_limits[0], map_limits[2])
                 y = np.random.uniform(map_limits[1], map_limits[3])
             else:
-                # Generar posiciones cerca de la pose inicial usando una distribución normal
+                # Generate positions near the initial pose using a normal distribution
                 x = np.random.normal(initial_pose[0], initial_pose_sigma[0])
                 y = np.random.normal(initial_pose[1], initial_pose_sigma[1])
                 theta = np.random.normal(initial_pose[2], initial_pose_sigma[2])
 
-            if self._map.contains((x, y)):  # Comprobar que la partícula está en una zona libre
+            if self._map.contains((x, y)):  # Check that the particle is in a free zone
                 particles[num_particles] = (x, y, theta)
                 num_particles += 1
 
@@ -528,10 +528,10 @@ class ParticleFilter:
         for i, (measured, predicted) in enumerate(zip(measurements, predicted_measurements)):
             # Handle NaN values (out of range measurements)
             if np.isnan(measured) and np.isnan(predicted):
-                probability *= 1.0  # Buen match
+                probability *= 1.0  # Good match
                 continue
             elif np.isnan(measured) or np.isnan(predicted):
-                probability *= 0.1  # Penalización moderada por desajuste
+                probability *= 0.1  # Moderate penalty for mismatch
                 continue
 
             # Calculate probability for this measurement using Gaussian
@@ -547,51 +547,51 @@ class ParticleFilter:
 
     def move_and_resample(self, v: float, w: float, measurements: list[float]) -> tuple[bool, tuple[float, float, float]]:
         """
-        Método optimizado que combina movimiento y remuestreo, y gestiona el cambio entre PF y EKF.
-        Usa PF para localización global y EKF cuando el robot está localizado.
+        Optimized method that combines movement and resampling, and manages switching between PF and EKF.
+        Uses PF for global localization and EKF when the robot is localized.
         
         Args:
-            v: Velocidad lineal [m/s].
-            w: Velocidad angular [rad/s].
-            measurements: Mediciones del sensor LiDAR [m].
+            v: Linear velocity [m/s].
+            w: Angular velocity [rad/s].
+            measurements: LiDAR sensor measurements [m].
             
         Returns:
-            localized: True si la pose estimada es válida.
-            pose: Pose estimada del robot (x, y, theta) [m, m, rad].
+            localized: True if the estimated pose is valid.
+            pose: Estimated robot pose (x, y, theta) [m, m, rad].
         """
         localized = False
         pose = (float("inf"), float("inf"), float("inf"))
         
-        # Si estamos usando EKF
+        # If we are using EKF
         if self._using_ekf:
             try:
-                # Actualizar EKF con movimiento
+                # Update EKF with movement
                 self._ekf.predict(v, w)
                 
-                # Actualizar EKF con mediciones
+                # Update EKF with measurements
                 self._ekf.update(measurements)
                 
-                # Obtener pose estimada
+                # Get estimated pose
                 pose = self._ekf.get_pose()
                 localized = True
                 
             except Exception as e:
-                print(f"Error en EKF: {e}. Volviendo a filtro de partículas.")
+                print(f"Error in EKF: {e}. Switching back to particle filter.")
                 self._switch_to_particle_filter(pose)
                 localized = False
         
-        # Si no estamos usando EKF (o acabamos de volver a PF)
+        # If we are not using EKF (or just switched back to PF)
         if not self._using_ekf:
-            # Actualizar filtro de partículas con movimiento
+            # Update particle filter with movement
             self.move(v, w)
             
-            # Actualizar filtro de partículas con mediciones
+            # Update particle filter with measurements
             self.resample(measurements)
             
-            # Obtener pose estimada
+            # Get estimated pose
             localized, pose = self.compute_pose()
             
-            # Si se ha localizado y está configurado para usar EKF, cambiar a EKF
+            # If localized and configured to use EKF, switch to EKF
             if localized and self._use_ekf_when_localized and not self._using_ekf:
                 self._switch_to_ekf(pose)
         
@@ -599,14 +599,14 @@ class ParticleFilter:
         
     def _switch_to_ekf(self, pose: tuple[float, float, float]) -> None:
         """
-        Cambia del filtro de partículas al filtro de Kalman extendido.
+        Switches from particle filter to extended Kalman filter.
         
         Args:
-            pose: Pose inicial para el EKF (x, y, theta) [m, m, rad].
+            pose: Initial pose for the EKF (x, y, theta) [m, m, rad].
         """
-        print("Cambiando a filtro de Kalman extendido para mayor eficiencia...")
+        print("Switching to extended Kalman filter for greater efficiency...")
         
-        # Inicializar EKF con la pose actual
+        # Initialize EKF with current pose
         self._ekf = ExtendedKalmanFilter(
             dt=self._dt,
             map_path=self._map_path,
@@ -623,20 +623,20 @@ class ParticleFilter:
         
     def _switch_to_particle_filter(self, pose: tuple[float, float, float]) -> None:
         """
-        Vuelve del filtro de Kalman extendido al filtro de partículas.
+        Switches back from extended Kalman filter to particle filter.
         
         Args:
-            pose: Última pose estimada por el EKF (x, y, theta) [m, m, rad].
+            pose: Last pose estimated by the EKF (x, y, theta) [m, m, rad].
         """
-        print("Volviendo a filtro de partículas...")
+        print("Switching back to particle filter...")
         
-        # Inicializar partículas alrededor de la última pose estimada
-        # Usar una distribución más amplia para aumentar robustez
-        sigma_factor = 3.0  # Factor de ampliación de la sigma
-        initial_sigma = (0.2, 0.2, math.radians(20))  # Valores amplios pero no demasiado
+        # Initialize particles around the last estimated pose
+        # Use a wider distribution to increase robustness
+        sigma_factor = 3.0  # Sigma amplification factor
+        initial_sigma = (0.2, 0.2, math.radians(20))  # Wide but not too wide values
         self._particles = self._init_particles(
             self._initial_particle_count,
-            False,  # Localización local, no global
+            False,  # Local localization, not global
             pose, 
             (initial_sigma[0] * sigma_factor, 
              initial_sigma[1] * sigma_factor, 

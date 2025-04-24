@@ -3,7 +3,7 @@ import math
 
 class WallFollower:
     def __init__(self, dt: float) -> None:
-        self._dt: float = dt  # para el real *2, para el simulado *1
+        self._dt: float = dt  # x2 for real robot, x1 for simulation
         self._desired_distance = 0.2
         self.Kp = 2
         self.Kd = 1
@@ -15,7 +15,7 @@ class WallFollower:
         self._turn_left_mode = False
         self._turn_right_mode = False
 
-        # Variables para el modo callejón sin salida
+        # Variables for dead-end mode
         self._dead_end_mode = False
         self._rotation_completed = 0.0
 
@@ -37,7 +37,7 @@ class WallFollower:
         if math.isnan(right_distance):
             right_distance = self.last_right
 
-        v = 0.22  # para el real 0.1
+        v = 0.22  # 0.1 for real robot
         w = 0.0
 
         if (
@@ -90,7 +90,7 @@ class WallFollower:
                 error = self._desired_distance - right_distance
             derivative = (error - self.last_error) / self._dt
             self.integral_error += error * self._dt
-            # Control PID completo
+            # Complete PID control
             w = self.Kp * error + self.Kd * derivative + self.Ki * self.integral_error
             self.last_error = error
         self.last_front = front_distance

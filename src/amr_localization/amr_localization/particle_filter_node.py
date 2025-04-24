@@ -8,7 +8,7 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 
 import math
-import numpy as np  # # ADDED
+import numpy as np  # Added
 import os
 import time
 import traceback
@@ -34,15 +34,15 @@ class ParticleFilterNode(LifecycleNode):
         self.declare_parameter("sigma_z", 0.1)
         self.declare_parameter("steps_btw_sense_updates", 20)
         self.declare_parameter("world", "lab03")
-        self.declare_parameter("use_ekf_when_localized", True)  # Usar EKF cuando el robot está localizado
+        self.declare_parameter("use_ekf_when_localized", True)  # Use EKF when the robot is localized
 
         self._pose_publisher = None
         
-        # # ADDED: Variables para acumular la odometría
+        # Added: Variables to accumulate odometry
         self._accumulated_distance = 0.0  
         self._accumulated_rotation = 0.0
         self._odom_samples = 0
-        self._dt = 0.05  # Valor predeterminado, se actualizará en on_configure
+        self._dt = 0.05  # Default value, will be updated in on_configure
 
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
         """Node configuration callback. Creates a particle filter object and initializes subscribers.
@@ -86,7 +86,7 @@ class ParticleFilterNode(LifecycleNode):
                 os.path.join(os.path.dirname(__file__), "..", "maps", world + ".json")
             )
             self._particle_filter = ParticleFilter(
-                self._dt,  # Usar el atributo guardado
+                self._dt,  # Use the stored attribute
                 map_path,
                 particle_count=particles,
                 sigma_v=sigma_v,
@@ -165,22 +165,22 @@ class ParticleFilterNode(LifecycleNode):
         z_w: float = odom_msg.twist.twist.angular.z
         z_scan: list[float] = scan_msg.ranges
 
-        # # ADDED: Acumular odometría
+        # Added: Accumulate odometry
         self._accumulate_odometry(z_v, z_w)
         
-        # Verificar si es momento de hacer una actualización completa
+        # Check if it's time to perform a complete update
         should_update = self._localized or not self._steps % self._steps_btw_sense_updates
         
         x_h, y_h, theta_h = float("inf"), float("inf"), float("inf")
         
         if should_update:
-            # Ejecutar actualización integrada de movimiento y medición
+            # Execute integrated motion and measurement update
             x_h, y_h, theta_h = self._execute_integrated_update(z_scan)
         else:
-            # Siempre ejecutar el movimiento independientemente de la visualización
+            # Always execute the movement step regardless of visualization
             self._execute_motion_step(z_v, z_w)
             
-            # Visualizar solo si está habilitado
+            # Visualize only if enabled
             if self._enable_plot:
                 self._particle_filter.show("Move", save_figure=True)
         
@@ -246,7 +246,7 @@ class ParticleFilterNode(LifecycleNode):
         msg.header.frame_id = "map"
         msg.localized = self._localized
 
-        # Solo incluir pose si está localizado y los valores son válidos
+        # Only include pose if localized and values are valid
         if self._localized and not (math.isinf(x_h) or math.isinf(y_h) or math.isinf(theta_h)):
             msg.pose.position.x = x_h
             msg.pose.position.y = y_h
@@ -259,65 +259,65 @@ class ParticleFilterNode(LifecycleNode):
         self._pose_publisher.publish(msg)
 
     def _accumulate_odometry(self, z_v: float, z_w: float) -> None:
-        """Acumula los datos de odometría entre actualizaciones de remuestreo.
+        """Accumulates odometry data between resampling updates.
         
         Args:
-            z_v: Velocidad lineal [m/s].
-            z_w: Velocidad angular [rad/s].
+            z_v: Linear velocity [m/s].
+            z_w: Angular velocity [rad/s].
         """
-        # # ADDED: Método completo
-        # Para la velocidad lineal, acumulamos la distancia recorrida
-        # teniendo en cuenta si el robot se mueve hacia adelante o hacia atrás
-        self._accumulated_distance += z_v * self._dt  # Distancia = velocidad * tiempo
+        # Added: Complete method
+        # For linear velocity, we accumulate the distance traveled
+        # considering whether the robot moves forwards or backwards
+        self._accumulated_distance += z_v * self._dt  # Distance = velocity * time
         
-        # Para la velocidad angular, acumulamos la rotación total
-        self._accumulated_rotation += z_w * self._dt  # Rotación = velocidad angular * tiempo
+        # For angular velocity, we accumulate the total rotation
+        self._accumulated_rotation += z_w * self._dt  # Rotation = angular velocity * time
         
-        # Incrementar contador de muestras
+        # Increment sample counter
         self._odom_samples += 1
         
     def _execute_integrated_update(self, z_scan: list[float]) -> tuple[float, float, float]:
-        """Ejecuta una actualización integrada de movimiento y medición basada en la odometría acumulada.
+        """Executes an integrated motion and measurement update based on accumulated odometry.
         
         Args:
-            z_scan: Mediciones de distancia del LiDAR.
+            z_scan: LiDAR distance measurements.
             
         Returns:
-            Pose estimada (x_h, y_h, theta_h) [m, m, rad]; inf si no se puede calcular.
+            Estimated pose (x_h, y_h, theta_h) [m, m, rad]; inf if cannot be computed.
         """
         pose = (float("inf"), float("inf"), float("inf"))
         
-        # Verificar que hayamos acumulado muestras
+        # Check that we've accumulated samples
         if self._odom_samples > 0:
-            # Calcular velocidades equivalentes para todo el período acumulado
+            # Calculate equivalent velocities for the entire accumulated period
             effective_v = self._accumulated_distance / (self._odom_samples * self._dt)
             effective_w = self._accumulated_rotation / (self._odom_samples * self._dt)
             
-            # Usar el método combinado que maneja automáticamente PF y EKF
+            # Use the combined method that automatically handles PF and EKF
             start_time = time.perf_counter()
             self._localized, pose = self._particle_filter.move_and_resample(effective_v, effective_w, z_scan)
             total_time = time.perf_counter() - start_time
             
-            # Registrar información sobre el tiempo de ejecución
+            # Log execution time information
             self.get_logger().info(f"Total update time: {total_time:.6f} s")
             
-            # Visualizar solo si está habilitado
+            # Visualize only if enabled
             if self._enable_plot:
                 self._particle_filter.show("Update", save_figure=True)
                 
-            # Reiniciar acumuladores para el siguiente período
+            # Reset accumulators for the next period
             self._accumulated_distance = 0.0
             self._accumulated_rotation = 0.0
             self._odom_samples = 0
             self._steps = 0
             
-            # Registrar información sobre la localización
+            # Log localization information
             if self._localized:
-                self.get_logger().info(f"Robot localizado en: ({pose[0]:.2f}, {pose[1]:.2f}, {pose[2]:.2f})")
+                self.get_logger().info(f"Robot localized at: ({pose[0]:.2f}, {pose[1]:.2f}, {pose[2]:.2f})")
                 
-                # Mostrar método usado (PF o EKF)
-                method = "EKF" if self._particle_filter._using_ekf else "Filtro de Partículas"
-                self.get_logger().info(f"Método actual: {method}")
+                # Show method used (PF or EKF)
+                method = "EKF" if self._particle_filter._using_ekf else "Particle Filter"
+                self.get_logger().info(f"Current method: {method}")
         
         return pose
 

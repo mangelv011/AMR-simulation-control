@@ -6,7 +6,7 @@ from geometry_msgs.msg import TwistStamped
 from nav_msgs.msg import Path
 
 import math
-import numpy as np  # # ADDED
+import numpy as np  # Added
 import traceback
 from transforms3d.euler import quat2euler
 
@@ -20,9 +20,9 @@ class PurePursuitNode(LifecycleNode):
 
         # Parameters
         self.declare_parameter("dt", 0.05)
-        self.declare_parameter("lookahead_distance", 0.3)  # # MODIFIED: Distancia de mirada adelante más óptima
+        self.declare_parameter("lookahead_distance", 0.3)  # Modified: Optimal lookahead distance
         
-        # # ADDED: Precalcular estructuras que se usarán frecuentemente
+        # Added: Pre-calculate structures that will be used frequently
         self._twist_msg = TwistStamped()
         self._cmd_header_frame_id = "map"
         
@@ -54,7 +54,7 @@ class PurePursuitNode(LifecycleNode):
             # Attribute and object initializations
             self._pure_pursuit = PurePursuit(dt, lookahead_distance)
             
-            # # ADDED: Preparar la cabecera del mensaje para reutilizarla
+            # Added: Prepare the message header for reuse
             self._twist_msg.header.frame_id = self._cmd_header_frame_id
 
         except Exception:
@@ -84,7 +84,7 @@ class PurePursuitNode(LifecycleNode):
 
         """
         if pose_msg.localized:
-            # # OPTIMIZED: Extraer componentes en una sola operación
+            # Optimized: Extract components in a single operation
             x = pose_msg.pose.position.x
             y = pose_msg.pose.position.y
             quat_w = pose_msg.pose.orientation.w
@@ -92,7 +92,7 @@ class PurePursuitNode(LifecycleNode):
             quat_y = pose_msg.pose.orientation.y
             quat_z = pose_msg.pose.orientation.z
             
-            # # OPTIMIZED: Conversión más directa de cuaternión a ángulo de Euler
+            # Optimized: More direct conversion from quaternion to Euler angle
             _, _, theta = quat2euler((quat_w, quat_x, quat_y, quat_z))
             theta %= 2 * math.pi
 
@@ -111,7 +111,7 @@ class PurePursuitNode(LifecycleNode):
 
         """
         # TODO: 4.8. Complete the function body with your code (i.e., replace the pass statement).
-        # # OPTIMIZED: Convertir directamente a una lista en lugar de iterar dos veces
+        # Optimized: Convert directly to a list instead of iterating twice
         path_points = [(pose.pose.position.x, pose.pose.position.y) for pose in path_msg.poses]
         self._pure_pursuit._path = path_points
 
@@ -123,10 +123,10 @@ class PurePursuitNode(LifecycleNode):
             w: Angular velocity [rad/s].
 
         """
-        # # OPTIMIZED: Reutilizar un solo mensaje en lugar de crear uno nuevo cada vez
+        # Optimized: Reuse a single message instead of creating a new one each time
         self._twist_msg.header.stamp = self.get_clock().now().to_msg()
         
-        # # OPTIMIZED: Asignar solo los valores que cambian
+        # Optimized: Assign only the values that change
         self._twist_msg.twist.linear.x = v
         self._twist_msg.twist.angular.z = w
         

@@ -16,16 +16,16 @@ class PurePursuit:
         self._path: list[tuple[float, float]] = []
         self._aligned = False
         
-        # ADDED: Precalculate constant values
+        # Added: Precalculate constant values
         self._lookahead_squared = lookahead_distance ** 2
-        self._angle_threshold = np.pi/4.0  # MODIFIED: More permissive threshold (45 degrees)
-        self._base_velocity = 0.4  # m/s  # MODIFIED: Higher base velocity
-        self._min_velocity = 0.15  # ADDED: Higher minimum velocity
+        self._angle_threshold = np.pi/4.0  # Modified: More permissive threshold (45 degrees)
+        self._base_velocity = 0.4  # m/s  # Modified: Higher base velocity
+        self._min_velocity = 0.15  # Added: Higher minimum velocity
         
-        # ADDED: Cache for closest points
+        # Added: Cache for closest points
         self._last_closest_idx = 0
         
-        # ADDED: Factors for velocity smoothing
+        # Added: Factors for velocity smoothing
         self._max_angular_vel = 1.5  # Maximum angular velocity
         self._slowdown_factor = 0.5  # Reduction factor at the end of the path
 
@@ -108,7 +108,7 @@ class PurePursuit:
     def path(self, value: list[tuple[float, float]]) -> None:
         """Path setter."""
         self._path = value
-        # ADDED: Reset cache index when changing the path
+        # Added: Reset cache index when changing the path
         self._last_closest_idx = 0
         self._aligned = False
 
@@ -165,7 +165,7 @@ class PurePursuit:
                     # If distance starts increasing, we can stop
                     break
         
-        # ADDED: Update cache with the newly found index
+        # Added: Update cache with the newly found index
         self._last_closest_idx = closest_idx
         
         return closest_xy, closest_idx

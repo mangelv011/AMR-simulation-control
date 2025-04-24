@@ -211,10 +211,14 @@ class PRMNode(LifecycleNode):
             pose.pose.position.y = point[1]
             msg.poses.append(pose)
         self._path_publisher.publish(msg)
-        
-        
+
 
 def main(args=None):
+    """Entry point function for the PRM node.
+    
+    Args:
+        args: Command line arguments passed to the rclpy.init function.
+    """
     rclpy.init(args=args)
     prm_node = PRMNode()
 

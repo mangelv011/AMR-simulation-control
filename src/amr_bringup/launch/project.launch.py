@@ -3,57 +3,26 @@ from launch_ros.actions import LifecycleNode, Node
 import random
 import math
 
-
-def select_random_start_goal():
+def generate_launch_description():
     """
-    Randomly selects a start and goal position combination and a random orientation.
+    Generate the launch description with all necessary nodes for the AMR system.
     
     Returns:
-        tuple: Pair of tuples (start, goal) with the selected coordinates
-               where start includes random orientation (x, y, theta)
+        LaunchDescription: Complete launch description for the project
     """
-    # Define the possible start and goal position pairs
-    start_goal_positions = [
-        ((-1.0, -1.0), (-1.0, 0.6)),
-        ((-1.0, 0.6), (-1.0, -1.0)),
-        ((-0.6, 1.0), (1.0, 1.0)),
-        ((1.0, 1.0), (-0.6, 1.0))
-    ]
-    
-    # Define possible orientations in radians (north, east, south, west)
-    orientations = {
-        "north": 0.0,                # 0 degrees
-        "east": math.pi/2,           # 90 degrees
-        "south": math.pi,            # 180 degrees
-        "west": 3*math.pi/2          # 270 degrees
-    }
-    
-    # Select random position pair and random orientation
-    start_pos, goal = random.choice(start_goal_positions)
-    orientation_name = random.choice(list(orientations.keys()))
-    orientation_rad = orientations[orientation_name]
-    
-    # Create start tuple with position and orientation
-    start = (start_pos[0], start_pos[1], orientation_rad)
-    
-    # Print selected orientation for information
-    print(f"Selected orientation: {orientation_name} ({math.degrees(orientation_rad)} degrees)")
-    start = (1.0, -1.0, orientation_rad)
-    goal = (0.2, -0.6)
-    return start, goal
-
-
-def generate_launch_description():
+    # Define the world to be used
     world = "project"
     
-    # Randomly select start and goal
-    start, goal = select_random_start_goal()
+    # Select start and goal positions
+    start = (1.0, -1.0, math.pi)
+    goal = (0.2, -0.6)
     
     # Print the selected combination for information
     print(f"Using random combination of points:")
     print(f"Start: {start}")
     print(f"Goal: {goal}")
 
+    # Initialize particle filter node for localization
     particle_filter_node = LifecycleNode(
         package="amr_localization",
         executable="particle_filter",
@@ -65,7 +34,7 @@ def generate_launch_description():
             {
                 "enable_plot": False,
                 "global_localization": True,
-                "particles": 2000,  # 2000
+                "particles": 2000,  # 2000 particles for robust localization
                 "sigma_v": 0.05,
                 "sigma_w": 0.1,
                 "sigma_z": 0.2,
@@ -75,6 +44,7 @@ def generate_launch_description():
         ],
     )
 
+    # Initialize probabilistic roadmap node for path planning
     probabilistic_roadmap_node = LifecycleNode(
         package="amr_planning",
         executable="probabilistic_roadmap",
@@ -99,6 +69,7 @@ def generate_launch_description():
         ],
     )
 
+    # Initialize wall follower node for obstacle avoidance
     wall_follower_node = LifecycleNode(
         package="amr_control",
         executable="wall_follower",
@@ -109,6 +80,7 @@ def generate_launch_description():
         parameters=[{"enable_localization": True}],
     )
 
+    # Initialize pure pursuit node for path following
     pure_pursuit_node = LifecycleNode(
         package="amr_control",
         executable="pure_pursuit",
@@ -119,6 +91,7 @@ def generate_launch_description():
         parameters=[{"lookahead_distance": 0.3}],
     )
 
+    # Initialize simulation node for CoppeliaSim
     coppeliasim_node = LifecycleNode(
         package="amr_simulation",
         executable="coppeliasim",
@@ -136,6 +109,7 @@ def generate_launch_description():
         ],
     )
 
+    # Initialize lifecycle manager node to control node state transitions
     lifecycle_manager_node = Node(
         package="amr_bringup",
         executable="lifecycle_manager",
@@ -154,6 +128,7 @@ def generate_launch_description():
         ],
     )
 
+    # Return the complete launch description with all nodes
     return LaunchDescription(
         [
             particle_filter_node,

@@ -77,7 +77,7 @@ class WallFollowerNode(LifecycleNode):
             ts = message_filters.ApproximateTimeSynchronizer(
                 self._subscribers,
                 queue_size=10,
-                slop=9  # Reducido de 9 a 1 para mejor sincronización
+                slop=9  # Reduced from 9 to 1 for better synchronization
             )
             ts.registerCallback(self._compute_commands_callback)
 
