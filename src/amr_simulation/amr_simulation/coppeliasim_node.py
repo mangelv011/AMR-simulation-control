@@ -250,7 +250,6 @@ class CoppeliaSimNode(LifecycleNode):
         """
         # TODO: 2.5. Complete the function body with your code (i.e., replace the pass statement).
         msg = Odometry()
-        msg.header.stamp = self.get_clock().now().to_msg()
         msg.twist.twist.linear.x = z_v
         msg.twist.twist.angular.z = z_w
         self._publisher_odometry.publish(msg)
@@ -264,7 +263,6 @@ class CoppeliaSimNode(LifecycleNode):
         """
         # TODO: 2.6. Complete the function body with your code (i.e., replace the pass statement).
         msg = LaserScan()
-        msg.header.stamp = self.get_clock().now().to_msg()
         msg.ranges = z_scan
         self._publisher_lscan.publish(msg)
 

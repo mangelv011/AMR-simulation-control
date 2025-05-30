@@ -6,7 +6,7 @@ import math
 
 def generate_launch_description():
     world = "project"
-    start = (0.2, -0.6, math.radians(0))
+    start = (-1.0, -1.0, math.radians(90))
     goal = (-0.6, 1.0)
 
     particles = 50

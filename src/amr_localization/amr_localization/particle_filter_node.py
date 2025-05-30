@@ -8,7 +8,6 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 
 import math
-import numpy as np  # Added
 import os
 import time
 import traceback
@@ -32,31 +31,23 @@ class ParticleFilterNode(LifecycleNode):
         self.declare_parameter("sigma_v", 0.1)
         self.declare_parameter("sigma_w", 0.1)
         self.declare_parameter("sigma_z", 0.1)
-        self.declare_parameter("steps_btw_sense_updates", 20)
+        self.declare_parameter("steps_btw_sense_updates", 10)
         self.declare_parameter("world", "lab03")
-        self.declare_parameter("use_ekf_when_localized", True)  # Use EKF when the robot is localized
 
         self._pose_publisher = None
-        
-        # Added: Variables to accumulate odometry
-        self._accumulated_distance = 0.0  
-        self._accumulated_rotation = 0.0
-        self._odom_samples = 0
-        self._dt = 0.05  # Default value, will be updated in on_configure
 
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
-        """Node configuration callback. Creates a particle filter object and initializes subscribers.
+        """Handles a configuring transition.
 
         Args:
             state: Current lifecycle state.
 
-        Returns:
-            Success if configuration is successful, failure otherwise.
-
         """
+        self.get_logger().info(f"Transitioning from '{state.label}' to 'inactive' state.")
+
         try:
             # Parameters
-            self._dt = self.get_parameter("dt").get_parameter_value().double_value
+            dt = self.get_parameter("dt").get_parameter_value().double_value
             self._enable_plot = self.get_parameter("enable_plot").get_parameter_value().bool_value
             global_localization = (
                 self.get_parameter("global_localization").get_parameter_value().bool_value
@@ -77,7 +68,6 @@ class ParticleFilterNode(LifecycleNode):
                 self.get_parameter("steps_btw_sense_updates").get_parameter_value().integer_value
             )
             world = self.get_parameter("world").get_parameter_value().string_value
-            use_ekf = self.get_parameter("use_ekf_when_localized").get_parameter_value().bool_value
 
             # Attribute and object initializations
             self._localized = False
@@ -86,7 +76,7 @@ class ParticleFilterNode(LifecycleNode):
                 os.path.join(os.path.dirname(__file__), "..", "maps", world + ".json")
             )
             self._particle_filter = ParticleFilter(
-                self._dt,  # Use the stored attribute
+                dt,
                 map_path,
                 particle_count=particles,
                 sigma_v=sigma_v,
@@ -95,7 +85,6 @@ class ParticleFilterNode(LifecycleNode):
                 global_localization=global_localization,
                 initial_pose=initial_pose,
                 initial_pose_sigma=initial_pose_sigma,
-                use_ekf_when_localized=use_ekf
             )
 
             if self._enable_plot:
@@ -161,29 +150,16 @@ class ParticleFilterNode(LifecycleNode):
 
         """
         # Parse measurements
+        # TODO: 2.8. Parse the odometry from the Odometry message (i.e., read z_v and z_w).
         z_v: float = odom_msg.twist.twist.linear.x
         z_w: float = odom_msg.twist.twist.angular.z
+        
+        # TODO: 2.9. Parse LiDAR measurements from the LaserScan message (i.e., read z_scan).
         z_scan: list[float] = scan_msg.ranges
 
-        # Added: Accumulate odometry
-        self._accumulate_odometry(z_v, z_w)
-        
-        # Check if it's time to perform a complete update
-        should_update = self._localized or not self._steps % self._steps_btw_sense_updates
-        
-        x_h, y_h, theta_h = float("inf"), float("inf"), float("inf")
-        
-        if should_update:
-            # Execute integrated motion and measurement update
-            x_h, y_h, theta_h = self._execute_integrated_update(z_scan)
-        else:
-            # Always execute the movement step regardless of visualization
-            self._execute_motion_step(z_v, z_w)
-            
-            # Visualize only if enabled
-            if self._enable_plot:
-                self._particle_filter.show("Move", save_figure=True)
-        
+        # Execute particle filter
+        self._execute_motion_step(z_v, z_w)
+        x_h, y_h, theta_h = self._execute_measurement_step(z_scan)
         self._steps += 1
 
         # Publish
@@ -231,6 +207,9 @@ class ParticleFilterNode(LifecycleNode):
 
         self.get_logger().info(f"Move step time: {move_time:7.3f} s")
 
+        if self._enable_plot:
+            self._particle_filter.show("Move", save_figure=True)
+
     def _publish_pose_estimate(self, x_h: float, y_h: float, theta_h: float) -> None:
         """Publishes the robot's pose estimate in a custom amr_msgs.msg.PoseStamped message.
 
@@ -246,7 +225,7 @@ class ParticleFilterNode(LifecycleNode):
         msg.header.frame_id = "map"
         msg.localized = self._localized
 
-        # Only include pose if localized and values are valid
+        # Solo incluir pose si está localizado y los valores son válidos
         if self._localized and not (math.isinf(x_h) or math.isinf(y_h) or math.isinf(theta_h)):
             msg.pose.position.x = x_h
             msg.pose.position.y = y_h
@@ -257,69 +236,6 @@ class ParticleFilterNode(LifecycleNode):
             msg.pose.orientation.z = quat[3]
 
         self._pose_publisher.publish(msg)
-
-    def _accumulate_odometry(self, z_v: float, z_w: float) -> None:
-        """Accumulates odometry data between resampling updates.
-        
-        Args:
-            z_v: Linear velocity [m/s].
-            z_w: Angular velocity [rad/s].
-        """
-        # Added: Complete method
-        # For linear velocity, we accumulate the distance traveled
-        # considering whether the robot moves forwards or backwards
-        self._accumulated_distance += z_v * self._dt  # Distance = velocity * time
-        
-        # For angular velocity, we accumulate the total rotation
-        self._accumulated_rotation += z_w * self._dt  # Rotation = angular velocity * time
-        
-        # Increment sample counter
-        self._odom_samples += 1
-        
-    def _execute_integrated_update(self, z_scan: list[float]) -> tuple[float, float, float]:
-        """Executes an integrated motion and measurement update based on accumulated odometry.
-        
-        Args:
-            z_scan: LiDAR distance measurements.
-            
-        Returns:
-            Estimated pose (x_h, y_h, theta_h) [m, m, rad]; inf if cannot be computed.
-        """
-        pose = (float("inf"), float("inf"), float("inf"))
-        
-        # Check that we've accumulated samples
-        if self._odom_samples > 0:
-            # Calculate equivalent velocities for the entire accumulated period
-            effective_v = self._accumulated_distance / (self._odom_samples * self._dt)
-            effective_w = self._accumulated_rotation / (self._odom_samples * self._dt)
-            
-            # Use the combined method that automatically handles PF and EKF
-            start_time = time.perf_counter()
-            self._localized, pose = self._particle_filter.move_and_resample(effective_v, effective_w, z_scan)
-            total_time = time.perf_counter() - start_time
-            
-            # Log execution time information
-            self.get_logger().info(f"Total update time: {total_time:.6f} s")
-            
-            # Visualize only if enabled
-            if self._enable_plot:
-                self._particle_filter.show("Update", save_figure=True)
-                
-            # Reset accumulators for the next period
-            self._accumulated_distance = 0.0
-            self._accumulated_rotation = 0.0
-            self._odom_samples = 0
-            self._steps = 0
-            
-            # Log localization information
-            if self._localized:
-                self.get_logger().info(f"Robot localized at: ({pose[0]:.2f}, {pose[1]:.2f}, {pose[2]:.2f})")
-                
-                # Show method used (PF or EKF)
-                method = "EKF" if self._particle_filter._using_ekf else "Particle Filter"
-                self.get_logger().info(f"Current method: {method}")
-        
-        return pose
 
 
 def main(args=None):

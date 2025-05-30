@@ -8,7 +8,6 @@ import random
 from amr_localization.maps import Map
 from matplotlib import pyplot as plt
 from sklearn.cluster import DBSCAN
-from amr_localization.extended_kalman_filter import ExtendedKalmanFilter
 
 
 class ParticleFilter:
@@ -27,7 +26,6 @@ class ParticleFilter:
         global_localization: bool = True,
         initial_pose: tuple[float, float, float] = (float("nan"), float("nan"), float("nan")),
         initial_pose_sigma: tuple[float, float, float] = (float("nan"), float("nan"), float("nan")),
-        use_ekf_when_localized: bool = True,  # Enable EKF when the robot is localized
     ):
         """Particle filter class initializer.
 
@@ -43,7 +41,7 @@ class ParticleFilter:
             global_localization: First localization if True, pose tracking otherwise.
             initial_pose: Approximate initial robot pose (x, y, theta) for tracking [m, m, rad].
             initial_pose_sigma: Standard deviation of the initial pose guess [m, m, rad].
-            use_ekf_when_localized: Use EKF when robot is localized for better performance.
+
         """
         self._dt: float = dt
         self._initial_particle_count: int = particle_count
@@ -54,17 +52,6 @@ class ParticleFilter:
         self._sigma_w: float = sigma_w
         self._sigma_z: float = sigma_z
         self._iteration: int = 0
-        
-        # Variables for the EKF filter
-        self._global_localization = global_localization
-        self._initial_pose = initial_pose
-        self._initial_pose_sigma = initial_pose_sigma
-        self._map_path = map_path
-        self._use_ekf_when_localized = use_ekf_when_localized
-        self._using_ekf = False
-        self._ekf = None
-        self._ekf_consecutive_failures = 0
-        self._ekf_failure_threshold = 5  # Number of consecutive failures to return to PF
 
         self._map = Map(
             map_path,
@@ -80,7 +67,6 @@ class ParticleFilter:
         self._timestamp = datetime.datetime.now(pytz.timezone("Europe/Madrid")).strftime(
             "%Y-%m-%d_%H-%M-%S"
         )
-        self._interval = 20
 
     def compute_pose(self) -> tuple[bool, tuple[float, float, float]]:
         """Computes the pose estimate when the particles form a single DBSCAN cluster.
@@ -93,74 +79,46 @@ class ParticleFilter:
             pose: Robot pose estimate (x, y, theta) [m, m, rad].
 
         """
-        # Optimized version of compute_pose for maximum speed
-        
-        # Early return for empty particles
-        if len(self._particles) == 0:
-            return False, (float("inf"), float("inf"), float("inf"))
-            
-        # Pre-allocate result variables
-        localized = False
-        pose = (float("inf"), float("inf"), float("inf"))
-        
-        # Use direct NumPy array access instead of list comprehension
-        # This avoids creating intermediate lists
-        positions = self._particles[:, :2]
-        orientations = self._particles[:, 2].astype(np.float64)  # Ensure numeric type
-        
-        # Configure DBSCAN for best performance with current data
-        # Use float32 for positions to speed up distance calculations
-        pos_float32 = np.array(positions, dtype=np.float32)
-        clustering = DBSCAN(
-            eps=0.5, 
-            min_samples=5,
-            algorithm='kd_tree',  # KD-tree is fastest for low-dimensional Euclidean space
-            leaf_size=30,  # Optimal for most cases
-            n_jobs=-1  # Use all available processors
-        ).fit(pos_float32)
-        
-        # Get unique labels efficiently
-        labels = clustering.labels_
-        unique_labels = np.unique(labels)
-        n_clusters = len(unique_labels) - (1 if -1 in unique_labels else 0)
-        
-        if n_clusters > 0:
-            # Multi-cluster case - just adjust particle count and return
-            if n_clusters > 1:
-                target_particles = max(2000, n_clusters * 200)
-                if len(self._particles) > target_particles:
-                    self._particles = self._particles[:target_particles]
-                return localized, pose
-            
-            # Single cluster case - compute pose
-            # Get valid indices using fast NumPy boolean indexing
-            mask = (labels == 0)
-            if np.sum(mask) >= 5:  # At least 5 particles in cluster
-                localized = True
-                
-                # Fast mean calculation with NumPy
-                x_mean = np.mean(positions[mask, 0])
-                y_mean = np.mean(positions[mask, 1])
-                
-                # Efficient circular mean for angles
-                thetas = orientations[mask]
-                sin_sum = np.sum(np.sin(thetas))
-                cos_sum = np.sum(np.cos(thetas))
-                count = len(thetas)
-                
-                # Vectorized calculation is faster than np.mean
-                sin_mean = sin_sum / count
-                cos_mean = cos_sum / count
-                theta_mean = np.arctan2(sin_mean, cos_mean) % (2 * np.pi)
-                
-                pose = (x_mean, y_mean, theta_mean)
-                
-                # Reduce particles if localized with fast array slicing
-                if len(self._particles) > 100:
-                    # Get indices where mask is True
-                    valid_indices = np.where(mask)[0][:70] # number of particles when the robot is localized
-                    self._particles = self._particles[valid_indices]
-        
+        # TODO: 3.10. Complete the missing function body with your code.
+
+        localized: bool = False
+        pose: tuple[float, float, float] = (float("inf"), float("inf"), float("inf"))
+
+        if len(self._particles) > 0:
+            positions = np.array([(p[0], p[1]) for p in self._particles])
+            orientations = np.array([p[2] for p in self._particles])
+
+            # Usar DBSCAN más permisivo al inicio
+            clustering = DBSCAN(eps=0.5, min_samples=5).fit(positions)
+            labels = clustering.labels_
+            n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+
+            if n_clusters > 0:
+                # Mantener más partículas cuando hay múltiples clusters
+                if n_clusters > 1:
+                    target_particles = max(2000, n_clusters * 200)
+                    if len(self._particles) > target_particles:
+                        self._particles = self._particles[:target_particles]
+                    return localized, pose
+
+                # Procesar solo cuando hay un cluster
+                valid_indices = np.where(labels == 0)[0]
+                if len(valid_indices) >= 5:
+                    localized = True
+                    x_mean = np.mean(positions[valid_indices, 0])
+                    y_mean = np.mean(positions[valid_indices, 1])
+
+                    thetas = orientations[valid_indices]
+                    cos_mean = np.mean(np.cos(thetas))
+                    sin_mean = np.mean(np.sin(thetas))
+                    theta_mean = np.arctan2(sin_mean, cos_mean) % (2 * np.pi)
+
+                    pose = (x_mean, y_mean, theta_mean)
+
+                    # Reducir partículas solo cuando estamos seguros de la localización
+                    if localized and len(self._particles) > 100:
+                        self._particles = self._particles[valid_indices][:100]
+
         return localized, pose
 
     def move(self, v: float, w: float) -> None:
@@ -174,64 +132,43 @@ class ParticleFilter:
         self._iteration += 1
 
         # TODO: 3.5. Complete the function body with your code.
-        
-        # Early return for empty particles to save computation
-        if len(self._particles) == 0:
-            return
-            
-        # Extract current orientations - convert to numpy array if needed
-        # Use direct array access for better performance
-        thetas = self._particles[:, 2].astype(np.float64)
-        
-        # Generate noise vectors for all particles at once
-        particle_count = len(self._particles)
-        # Use a single random call with larger array for better performance
-        noise = np.random.normal(0, [self._sigma_v, self._sigma_w], (particle_count, 2))
-        noisy_v = v + noise[:, 0]
-        noisy_w = w + noise[:, 1]
-        
-        # Pre-compute trigonometric functions once
-        cos_thetas = np.cos(thetas)
-        sin_thetas = np.sin(thetas)
-        
-        # Calculate movement steps for all particles (vectorized)
-        dt = self._dt  # Cache this value for better performance
-        x_steps = noisy_v * dt * cos_thetas
-        y_steps = noisy_v * dt * sin_thetas
-        theta_steps = noisy_w * dt
-        
-        # Store original positions and create arrays for new positions
-        # Use direct array access for better performance
-        old_x = self._particles[:, 0].astype(np.float64)
-        old_y = self._particles[:, 1].astype(np.float64)
-        new_x = old_x + x_steps
-        new_y = old_y + y_steps
-        
-        # Create array to hold collision status
-        collided = np.zeros(particle_count, dtype=bool)
-        collision_points = np.zeros((particle_count, 2))
-        
-        # Check collisions for each particle
-        # Use pre-allocated segments array for memory efficiency
-        for i in range(particle_count):
-            segment = [(old_x[i], old_y[i]), (new_x[i], new_y[i])]
+
+        for particle in self._particles:
+            # Current orientation
+            theta = particle[2]
+
+            # Add Gaussian noise to velocities
+            noisy_v = v + np.random.normal(0, self._sigma_v)
+            noisy_w = w + np.random.normal(0, self._sigma_w)
+
+            # Calculate movement steps
+            x_step = noisy_v * self._dt * np.cos(theta)
+            y_step = noisy_v * self._dt * np.sin(theta)
+            theta_step = noisy_w * self._dt
+
+            # Store original position
+            old_x, old_y = particle[0], particle[1]
+
+            # Calculate new position
+            new_x = old_x + x_step
+            new_y = old_y + y_step
+
+            # Define the movement segment
+            segment = [(old_x, old_y), (new_x, new_y)]
+
+            # Check if particle collided with a wall
             intersection_point, _ = self._map.check_collision(segment)
-            
+
             if intersection_point:
-                collided[i] = True
-                collision_points[i] = intersection_point
-        
-        # Apply updates to each particle individually to avoid type issues
-        for i in range(particle_count):
-            if collided[i]:
-                self._particles[i, 0] = collision_points[i, 0]
-                self._particles[i, 1] = collision_points[i, 1]
+                # If collision occurred, place the particle at the collision point
+                particle[0], particle[1] = intersection_point
             else:
-                self._particles[i, 0] = new_x[i]
-                self._particles[i, 1] = new_y[i]
-            
-            # Update orientations and keep in range [0, 2π)
-            self._particles[i, 2] = (thetas[i] + theta_steps[i]) % (2 * np.pi)
+                # No collision, update to new position
+                particle[0] = new_x
+                particle[1] = new_y
+
+            # Update orientation and keep in range [0, 2π)
+            particle[2] = (particle[2] + theta_step) % (2 * np.pi)
 
     def resample(self, measurements: list[float]) -> None:
         """Samples a new set of particles.
@@ -242,62 +179,48 @@ class ParticleFilter:
         """
         # TODO: 3.9. Complete the function body with your code (i.e., replace the pass statement).
 
-        # Pre-process measurements once instead of repeatedly
-        processed_measurements = np.array(measurements[0:240:self._interval])
-        
-        # Pre-allocate arrays for predicted measurements to avoid re-allocating in loop
         num_particles = len(self._particles)
-        weights = np.zeros(num_particles)
         
-        # Calculate all predicted measurements in one batch if possible
-        # If not possible, calculate individually but efficiently
-        for i in range(num_particles):
-            particle = tuple(self._particles[i][:3])
-            predicted = self._sense(particle)
-            
-            # Vectorized probability calculation
-            prob = 1.0
-            for j, (measured, pred) in enumerate(zip(processed_measurements, predicted)):
-                if np.isnan(measured) and np.isnan(pred):
-                    continue  # prob *= 1.0
-                elif np.isnan(measured) or np.isnan(pred):
-                    prob *= 0.1
-                    continue
-                
-                # Fast Gaussian calculation
-                diff = measured - pred
-                prob *= np.exp(-0.5 * (diff / self._sigma_z)**2) / (self._sigma_z * 2.50662827463)
-                
-                # Avoid numerical underflow
-                if prob < 1e-300:
-                    prob = 1e-300
-            
-            weights[i] = prob
+        # Calculate weights for all particles using vectorization if possible
+        weights = np.array([self._measurement_probability(measurements, tuple(particle[:3])) 
+                            for particle in self._particles])
         
-        # Fast normalization using NumPy
-        sum_weights = np.sum(weights)
-        if sum_weights > 0:
-            weights /= sum_weights
+        # Normalize weights
+        if np.sum(weights) > 0:
+            weights = weights / np.sum(weights)
         else:
-            weights.fill(1.0 / num_particles)
+            # If all weights are zero, use uniform distribution
+            weights = np.ones(num_particles) / num_particles
         
-        # Optimized systematic resampling using NumPy
-        # Pre-compute cumulative sum
-        cumsum = np.cumsum(weights)
+        # Prepare for Systematic Sampling
+        # Create cumulative sum of weights
+        cumulative_sum = np.cumsum(weights)
         
-        # Generate sample points
-        step = 1.0 / num_particles
-        u = np.random.uniform(0, step)
-        sample_points = u + np.arange(num_particles) * step
+        # Generate a single random starting point between 0 and 1/N
+        step_size = 1.0 / num_particles
+        start_point = np.random.uniform(0, step_size)
         
-        # Use searchsorted for fastest sample selection
-        indices = np.searchsorted(cumsum, sample_points)
+        # Generate evenly spaced points for sampling
+        points = start_point + np.arange(num_particles) * step_size
         
-        # Clip indices to valid range and create new particles
+        # Find indices of particles to be resampled using searchsorted
+        indices = np.searchsorted(cumulative_sum, points)
+        
+        # Ensure indices are within bounds
         indices = np.clip(indices, 0, num_particles - 1)
         
-        # Use NumPy advanced indexing for fast copying
-        self._particles = self._particles[indices].copy()
+        # Select particles based on indices
+        new_particles = self._particles[indices].copy()
+        
+        # Add small random noise to avoid particle depletion
+        # new_particles[:, 0] += np.random.normal(0, 0.01, num_particles)  # Small noise in x
+        # new_particles[:, 1] += np.random.normal(0, 0.01, num_particles)  # Small noise in y
+        # new_particles[:, 2] = (new_particles[:, 2] + np.random.normal(0, 0.01, num_particles)) % (
+        #     2 * np.pi
+        # )  # Small noise in orientation
+        
+        # Replace old particles with new ones
+        self._particles = new_particles
 
     def plot(self, axes, orientation: bool = True):
         """Draws particles.
@@ -406,16 +329,16 @@ class ParticleFilter:
         while num_particles < particle_count:
             if global_localization:
                 theta = np.random.choice(valid_orientations)
-                # Generate random positions within map limits
+                # Generar posiciones aleatorias dentro de los límites del mapa
                 x = np.random.uniform(map_limits[0], map_limits[2])
                 y = np.random.uniform(map_limits[1], map_limits[3])
             else:
-                # Generate positions near the initial pose using a normal distribution
+                # Generar posiciones cerca de la pose inicial usando una distribución normal
                 x = np.random.normal(initial_pose[0], initial_pose_sigma[0])
                 y = np.random.normal(initial_pose[1], initial_pose_sigma[1])
                 theta = np.random.normal(initial_pose[2], initial_pose_sigma[2])
 
-            if self._map.contains((x, y)):  # Check that the particle is in a free zone
+            if self._map.contains((x, y)):  # Comprobar que la partícula está en una zona libre
                 particles[num_particles] = (x, y, theta)
                 num_particles += 1
 
@@ -438,7 +361,7 @@ class ParticleFilter:
         x, y, theta = particle
 
         # Get the LiDAR rays from the particle position
-        indices = tuple(range(0, 240, self._interval)) 
+        indices = tuple(range(0, 240, 30))  # con ,30 hay index error
         lidar_segments = self._lidar_rays((x, y, theta), indices)
 
         # For each ray, check if it collides with the map
@@ -522,16 +445,16 @@ class ParticleFilter:
         # Get predicted measurements for this particle
         predicted_measurements = self._sense(particle)
      
-        measurements = [measurements[i] for i in range(0,240,self._interval)]
+        measurements = [measurements[i] for i in range(0,240,30)]
 
         # Compare each real measurement with the predicted one
         for i, (measured, predicted) in enumerate(zip(measurements, predicted_measurements)):
             # Handle NaN values (out of range measurements)
             if np.isnan(measured) and np.isnan(predicted):
-                probability *= 1.0  # Good match
+                probability *= 1.0  # Buen match
                 continue
             elif np.isnan(measured) or np.isnan(predicted):
-                probability *= 0.1  # Moderate penalty for mismatch
+                probability *= 0.1  # Penalización moderada por desajuste
                 continue
 
             # Calculate probability for this measurement using Gaussian
@@ -544,104 +467,3 @@ class ParticleFilter:
             probability *= measurement_prob
 
         return probability
-
-    def move_and_resample(self, v: float, w: float, measurements: list[float]) -> tuple[bool, tuple[float, float, float]]:
-        """
-        Optimized method that combines movement and resampling, and manages switching between PF and EKF.
-        Uses PF for global localization and EKF when the robot is localized.
-        
-        Args:
-            v: Linear velocity [m/s].
-            w: Angular velocity [rad/s].
-            measurements: LiDAR sensor measurements [m].
-            
-        Returns:
-            localized: True if the estimated pose is valid.
-            pose: Estimated robot pose (x, y, theta) [m, m, rad].
-        """
-        localized = False
-        pose = (float("inf"), float("inf"), float("inf"))
-        
-        # If we are using EKF
-        if self._using_ekf:
-            try:
-                # Update EKF with movement
-                self._ekf.predict(v, w)
-                
-                # Update EKF with measurements
-                self._ekf.update(measurements)
-                
-                # Get estimated pose
-                pose = self._ekf.get_pose()
-                localized = True
-                
-            except Exception as e:
-                print(f"Error in EKF: {e}. Switching back to particle filter.")
-                self._switch_to_particle_filter(pose)
-                localized = False
-        
-        # If we are not using EKF (or just switched back to PF)
-        if not self._using_ekf:
-            # Update particle filter with movement
-            self.move(v, w)
-            
-            # Update particle filter with measurements
-            self.resample(measurements)
-            
-            # Get estimated pose
-            localized, pose = self.compute_pose()
-            
-            # If localized and configured to use EKF, switch to EKF
-            if localized and self._use_ekf_when_localized and not self._using_ekf:
-                self._switch_to_ekf(pose)
-        
-        return localized, pose
-        
-    def _switch_to_ekf(self, pose: tuple[float, float, float]) -> None:
-        """
-        Switches from particle filter to extended Kalman filter.
-        
-        Args:
-            pose: Initial pose for the EKF (x, y, theta) [m, m, rad].
-        """
-        print("Switching to extended Kalman filter for greater efficiency...")
-        
-        # Initialize EKF with current pose
-        self._ekf = ExtendedKalmanFilter(
-            dt=self._dt,
-            map_path=self._map_path,
-            initial_pose=pose,
-            sigma_v=self._sigma_v,
-            sigma_w=self._sigma_w,
-            sigma_z=self._sigma_z,
-            sensor_range_max=self._sensor_range_max,
-            sensor_range_min=self._sensor_range_min
-        )
-        
-        self._using_ekf = True
-        self._ekf_consecutive_failures = 0
-        
-    def _switch_to_particle_filter(self, pose: tuple[float, float, float]) -> None:
-        """
-        Switches back from extended Kalman filter to particle filter.
-        
-        Args:
-            pose: Last pose estimated by the EKF (x, y, theta) [m, m, rad].
-        """
-        print("Switching back to particle filter...")
-        
-        # Initialize particles around the last estimated pose
-        # Use a wider distribution to increase robustness
-        sigma_factor = 3.0  # Sigma amplification factor
-        initial_sigma = (0.2, 0.2, math.radians(20))  # Wide but not too wide values
-        self._particles = self._init_particles(
-            self._initial_particle_count,
-            False,  # Local localization, not global
-            pose, 
-            (initial_sigma[0] * sigma_factor, 
-             initial_sigma[1] * sigma_factor, 
-             initial_sigma[2] * sigma_factor)
-        )
-        
-        self._using_ekf = False
-        self._ekf = None

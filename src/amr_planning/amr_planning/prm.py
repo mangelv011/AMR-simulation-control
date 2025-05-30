@@ -72,6 +72,7 @@ class PRM:
             Path to the destination. The first value corresponds to the initial location.
 
         """
+        # 4.3
         # Check if the target points are valid
         if not self._map.contains(start):
             raise ValueError("Start location is outside the environment.")
@@ -79,81 +80,44 @@ class PRM:
         if not self._map.contains(goal):
             raise ValueError("Goal location is outside the environment.")
 
-        ancestors: dict[tuple[float, float], tuple[float, float]] = {}  # {(x, y: (x_prev, y_prev)}
-
-        # TODO: 4.3. Complete the function body (i.e., replace the code below).
-        path: list[tuple[float, float]] = []
-        # 1. Find the closest graph nodes to the start and goal points
-        start_node = None
-        goal_node = None
-        min_start_dist = float('inf')
-        min_goal_dist = float('inf')
-
-        for node in self._graph.keys():
-            # Calculate distance from node to start point
-            start_dist = np.sqrt((node[0] - start[0])**2 + (node[1] - start[1])**2)
-            if start_dist < min_start_dist and not self._map.crosses([node, start]):
-                min_start_dist = start_dist
-                start_node = node
-                
-            # Calculate distance from node to goal point
-            goal_dist = np.sqrt((node[0] - goal[0])**2 + (node[1] - goal[1])**2)
-            if goal_dist < min_goal_dist and not self._map.crosses([node, goal]):
-                min_goal_dist = goal_dist
-                goal_node = node
-
-
-        # 2. Initialize open list (dictionary) and closed list (set)
-        # Open list: {(x, y): (f, g)} where f = g + h (total cost), g = cost from start
-        open_list = {}
+        # 1. Find closest nodes to start and goal
+        start_node = min(self._graph.keys(), key=lambda n: np.linalg.norm((n[0]-start[0], n[1]-start[1])) 
+                         if not self._map.crosses([n, start]) else float('inf'))
+        goal_node = min(self._graph.keys(), key=lambda n: np.linalg.norm((n[0]-goal[0], n[1]-goal[1])) 
+                        if not self._map.crosses([n, goal]) else float('inf'))
+        
+        # 2. Initialize A* variables
+        open_list = {start_node: (0 + self._dist(start_node, goal_node), 0)}  # {node: (f, g)}
         closed_list = set()
+        ancestors = {}  # {node: parent_node}
         
-        # Helper function to calculate heuristic (Euclidean distance)
-        def heuristic(node1, node2):
-            return np.sqrt((node1[0] - node2[0])**2 + (node1[1] - node2[1])**2)
-        
-        # Add start node to open list with g=0 and f=heuristic
-        g_start = 0
-        f_start = g_start + heuristic(start_node, goal_node)
-        open_list[start_node] = (f_start, g_start)
-
-        # 3. Main A* loop
+        # 3. A* search loop
         while open_list and goal_node not in open_list:
-            # a) Get node with lowest f value from open list
-            current = min(open_list, key=lambda k: open_list.get(k)[0])
-            
-            # b) Get g value and remove from open list
-            current_f, current_g = open_list[current]
+            # Get node with lowest f-score
+            current = min(open_list, key=lambda k: open_list[k][0])
+            current_g = open_list[current][1]
             del open_list[current]
             
-            # c) Expand the current node
+            # Process neighbors
             for neighbor in self._graph[current]:
-                # Skip if neighbor is in closed list
                 if neighbor in closed_list:
                     continue
-
-                # Calculate tentative g value (cost from start to neighbor through current)
-                edge_cost = heuristic(current, neighbor)
-                tentative_g = current_g + edge_cost
-                
-                # If neighbor not in open list or has better g value
-                if neighbor not in open_list or tentative_g < open_list[neighbor][1]:
-                    # Update open list with new f and g values
-                    f_neighbor = tentative_g + heuristic(neighbor, goal_node)
-                    open_list[neighbor] = (f_neighbor, tentative_g)
                     
-                    # Update ancestors dictionary
+                # Calculate new path cost
+                tentative_g = current_g + self._dist(current, neighbor)
+                
+                # If better path found, update open list
+                if neighbor not in open_list or tentative_g < open_list[neighbor][1]:
+                    open_list[neighbor] = (tentative_g + self._dist(neighbor, goal_node), tentative_g)
                     ancestors[neighbor] = current
             
-            # d) Add current to closed list
             closed_list.add(current)
-
-        # 4. Check if a path was found and reconstruct it
+            
+        # 4. Create final path
         if goal_node in open_list:
-            # If start and goal are not graph nodes, add them to ancestors
+            # Connect start and goal if they're not graph nodes
             if start != start_node:
                 ancestors[start_node] = start
-            
             if goal != goal_node:
                 ancestors[goal] = goal_node
             
@@ -161,6 +125,10 @@ class PRM:
         else:
             raise ValueError("No path found between start and goal.")
             
+    def _dist(self, node1, node2):
+        """Calculate Euclidean distance between two points."""
+        return np.sqrt((node1[0]-node2[0])**2 + (node1[1]-node2[1])**2)
+
     @staticmethod
     def smooth_path(
         path: list[tuple[float, float]],

@@ -8,7 +8,6 @@ from nav_msgs.msg import Path
 import os
 import time
 import traceback
-import math
 
 from amr_planning.prm import PRM
 
@@ -126,52 +125,8 @@ class PRMNode(LifecycleNode):
         if pose_msg.localized and not self._localized:
             start = (pose_msg.pose.position.x, pose_msg.pose.position.y)
 
-            try:
-                # Try to find path with the original start position
-                path = self._planning.find_path(start, self._goal)
-            except ValueError as e:
-                # Handle case where start position is outside environment
-                if "Start location is outside the environment" in str(e):
-                    self.get_logger().warn(f"Start location {start} is outside the environment. Attempting to find nearest valid position.")
-                    
-                    # Define search parameters
-                    search_radius = 0.1  # meters
-                    step_size = 0.02     # meters
-                    max_iterations = 5   # maximum number of expansion iterations
-                    
-                    # Try to find a valid start position nearby
-                    valid_start = None
-                    
-                    # Try in expanding circles
-                    for iteration in range(1, max_iterations + 1):
-                        current_radius = iteration * step_size
-                        
-                        # Generate points in a circle around the original position
-                        for angle in range(0, 360, 15):  # 24 points around the circle
-                            angle_rad = math.radians(angle)
-                            test_x = start[0] + current_radius * math.cos(angle_rad)
-                            test_y = start[1] + current_radius * math.sin(angle_rad)
-                            test_pos = (test_x, test_y)
-                            
-                            # Check if this position is within the environment
-                            if self._planning._map.contains(test_pos):
-                                valid_start = test_pos
-                                break
-                        
-                        if valid_start is not None:
-                            break
-                    
-                    if valid_start is None:
-                        raise ValueError(f"Could not find a valid position near {start}") from e
-                    
-                    self.get_logger().info(f"Using adjusted start position: {valid_start}")
-                    start = valid_start
-                    path = self._planning.find_path(start, self._goal)
-                else:
-                    # Re-raise other errors
-                    raise
-
             start_time = time.perf_counter()
+            path = self._planning.find_path(start, self._goal)
             pathfinding_time = time.perf_counter() - start_time
 
             self.get_logger().info(f"Pathfinding time: {pathfinding_time:1.3f} s")
@@ -211,14 +166,10 @@ class PRMNode(LifecycleNode):
             pose.pose.position.y = point[1]
             msg.poses.append(pose)
         self._path_publisher.publish(msg)
-
+        
+        
 
 def main(args=None):
-    """Entry point function for the PRM node.
-    
-    Args:
-        args: Command line arguments passed to the rclpy.init function.
-    """
     rclpy.init(args=args)
     prm_node = PRMNode()
 
