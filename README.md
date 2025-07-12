@@ -45,9 +45,9 @@ This project is licensed under the Apache License 2.0. See individual `package.x
 
 ## Contributors
 
-- Francisco López-Alvarado
-- Eugenio Ribón 
-- Miguel Ángel Vallejo
+- Francisco López-Alvarado ([GitHub](https://github.com/flopezalvaradoo)) 
+- Eugenio Ribón ([GitHub](https://github.com/EugenioRibon)) 
+- Miguel Ángel Vallejo ([GitHub](https://github.com/mangelv011)) 
 
 ## Acknowledgments
 
